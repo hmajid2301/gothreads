@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings - go-threads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <div class="container header-content">
+      <a href="index.html" class="logo">🧵 go-threads</a>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="wardrobe.html">Wardrobe</a>
+        <a href="upload.html">Upload</a>
+        <a href="outfits.html">Outfits</a>
+        <a href="analytics.html">Analytics</a>
+        <a href="settings.html" class="active">Settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <h1>Settings</h1>
+
+      <!-- Profile Settings -->
+      <div class="card">
+        <h2>Profile</h2>
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" value="John Doe" placeholder="Your name">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" value="john@example.com" placeholder="your@email.com" disabled>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem;">
+            Email is managed by your OAuth provider
+          </p>
+        </div>
+        <button class="btn btn-primary">Save Profile</button>
+      </div>
+
+      <!-- AI Processing -->
+      <div class="card">
+        <h2>AI Processing</h2>
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" checked>
+            <span>Automatically remove backgrounds</span>
+          </label>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
+            Use AI to remove backgrounds from uploaded photos
+          </p>
+        </div>
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" checked>
+            <span>Auto-tag colors and categories</span>
+          </label>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
+            AI will suggest colors, categories, and seasons for new items
+          </p>
+        </div>
+        <div class="form-group">
+          <label>Preferred AI Provider</label>
+          <select>
+            <option>Local (rembg) - Privacy-first</option>
+            <option>OpenAI Vision - Higher quality</option>
+            <option>Anthropic Claude - Alternative cloud</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Notifications -->
+      <div class="card">
+        <h2>Notifications</h2>
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" checked>
+            <span>Push notifications</span>
+          </label>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
+            Get notified when AI processing completes
+          </p>
+        </div>
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox">
+            <span>Email summaries</span>
+          </label>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
+            Weekly summary of your wardrobe activity
+          </p>
+        </div>
+      </div>
+
+      <!-- Wardrobe Preferences -->
+      <div class="card">
+        <h2>Wardrobe Preferences</h2>
+        <div class="form-group">
+          <label>Max wears before laundry</label>
+          <input type="number" value="3" min="1" max="10">
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem;">
+            Default number of wears before items need washing
+          </p>
+        </div>
+        <div class="form-group">
+          <label>Currency</label>
+          <select>
+            <option>USD ($)</option>
+            <option>EUR (€)</option>
+            <option>GBP (£)</option>
+            <option>CAD (C$)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Date format</label>
+          <select>
+            <option>MM/DD/YYYY</option>
+            <option>DD/MM/YYYY</option>
+            <option>YYYY-MM-DD</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Data & Privacy -->
+      <div class="card">
+        <h2>Data & Privacy</h2>
+        <div class="form-group">
+          <label>Export wardrobe data</label>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-bottom: 1rem;">
+            Download all your items, outfits, and analytics
+          </p>
+          <div style="display: flex; gap: 0.75rem;">
+            <button class="btn btn-secondary">Export as JSON</button>
+            <button class="btn btn-secondary">Export as CSV</button>
+            <button class="btn btn-secondary">Export as PDF</button>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 2rem;">
+          <label style="color: #E74C3C;">Delete account</label>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-bottom: 1rem;">
+            Permanently delete your account and all associated data
+          </p>
+          <button class="btn" style="background: #E74C3C; color: white;" onclick="confirm('Are you sure? This cannot be undone!')">Delete My Account</button>
+        </div>
+      </div>
+
+      <!-- About -->
+      <div class="card">
+        <h2>About</h2>
+        <p style="color: var(--text-neutral); line-height: 1.8;">
+          <strong>go-threads</strong> v1.0.0<br>
+          Privacy-first digital wardrobe manager<br>
+          <br>
+          Running on: <code style="background: var(--warm-bg); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">localhost:8080</code><br>
+          Database: <span style="color: #27AE60;">● Connected</span><br>
+          S3 Storage: <span style="color: #27AE60;">● Connected (SeaweedFS)</span><br>
+          AI Services: <span style="color: #27AE60;">● Available (rembg-local)</span><br>
+          <br>
+          <a href="https://github.com/yourusername/gothreads" style="color: var(--primary);">View on GitHub</a> •
+          <a href="https://github.com/yourusername/gothreads/issues" style="color: var(--primary);">Report Issue</a>
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

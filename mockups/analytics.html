@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analytics - go-threads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <div class="container header-content">
+      <a href="index.html" class="logo">🧵 go-threads</a>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="wardrobe.html">Wardrobe</a>
+        <a href="upload.html">Upload</a>
+        <a href="outfit-builder.html">Outfits</a>
+        <a href="analytics.html" class="active">Analytics</a>
+        <a href="settings.html">Settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <h1>Wardrobe Analytics</h1>
+
+      <!-- Stats Overview -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value">24</div>
+          <div class="stat-label">Total Items</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">$1,847</div>
+          <div class="stat-label">Total Investment</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">$42.15</div>
+          <div class="stat-label">Avg Cost Per Wear</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">89</div>
+          <div class="stat-label">Total Wears (30d)</div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="grid grid-2">
+        <div class="card">
+          <h2>Category Breakdown</h2>
+          <div style="min-height: 300px; display: flex; align-items: center; justify-content: center; background: var(--warm-bg); border-radius: 0.5rem; margin-top: 1rem;">
+            <div style="text-align: center;">
+              <div style="font-size: 3rem;">📊</div>
+              <p style="color: var(--text-neutral);">Pie chart (ApexCharts)</p>
+              <p style="font-size: 0.875rem; color: var(--text-neutral);">
+                Tops: 35% • Bottoms: 25%<br>
+                Shoes: 20% • Outerwear: 15% • Accessories: 5%
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Wear Frequency (30 Days)</h2>
+          <div style="min-height: 300px; display: flex; align-items: center; justify-content: center; background: var(--warm-bg); border-radius: 0.5rem; margin-top: 1rem;">
+            <div style="text-align: center;">
+              <div style="font-size: 3rem;">📈</div>
+              <p style="color: var(--text-neutral);">Line chart (ApexCharts)</p>
+              <p style="font-size: 0.875rem; color: var(--text-neutral);">
+                Shows daily wear count over last 30 days
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Items -->
+      <div class="card">
+        <h2>Most Worn Items</h2>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border); text-align: left;">
+              <th style="padding: 1rem;">Item</th>
+              <th style="padding: 1rem;">Category</th>
+              <th style="padding: 1rem;">Times Worn</th>
+              <th style="padding: 1rem;">Cost Per Wear</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 1rem; font-weight: 600;">Blue Denim Jeans</td>
+              <td style="padding: 1rem; color: var(--text-neutral);">Bottoms</td>
+              <td style="padding: 1rem;">24</td>
+              <td style="padding: 1rem; color: var(--primary);">$3.33</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 1rem; font-weight: 600;">White T-Shirt</td>
+              <td style="padding: 1rem; color: var(--text-neutral);">Tops</td>
+              <td style="padding: 1rem;">18</td>
+              <td style="padding: 1rem; color: var(--primary);">$1.67</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 1rem; font-weight: 600;">Black Leather Jacket</td>
+              <td style="padding: 1rem; color: var(--text-neutral);">Outerwear</td>
+              <td style="padding: 1rem;">12</td>
+              <td style="padding: 1rem; color: var(--primary);">$16.67</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 1rem; font-weight: 600;">Red Sneakers</td>
+              <td style="padding: 1rem; color: var(--text-neutral);">Shoes</td>
+              <td style="padding: 1rem;">8</td>
+              <td style="padding: 1rem; color: var(--primary);">$11.25</td>
+            </tr>
+            <tr>
+              <td style="padding: 1rem; font-weight: 600;">Gray Hoodie</td>
+              <td style="padding: 1rem; color: var(--text-neutral);">Tops</td>
+              <td style="padding: 1rem;">6</td>
+              <td style="padding: 1rem; color: var(--primary);">$10.00</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Least Worn -->
+      <div class="card">
+        <h2>Least Worn Items</h2>
+        <p style="color: var(--text-neutral); margin-bottom: 1rem;">Consider wearing these more or donating them!</p>
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border); text-align: left;">
+              <th style="padding: 1rem;">Item</th>
+              <th style="padding: 1rem;">Category</th>
+              <th style="padding: 1rem;">Times Worn</th>
+              <th style="padding: 1rem;">Cost Per Wear</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 1rem; font-weight: 600;">Fancy Watch</td>
+              <td style="padding: 1rem; color: var(--text-neutral);">Accessories</td>
+              <td style="padding: 1rem;">1</td>
+              <td style="padding: 1rem; color: #E74C3C;">$299.00</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 1rem; font-weight: 600;">Wool Suit</td>
+              <td style="padding: 1rem; color: var(--text-neutral);">Outerwear</td>
+              <td style="padding: 1rem;">2</td>
+              <td style="padding: 1rem; color: #E74C3C;">$249.50</td>
+            </tr>
+            <tr>
+              <td style="padding: 1rem; font-weight: 600;">Dress Shoes</td>
+              <td style="padding: 1rem; color: var(--text-neutral);">Shoes</td>
+              <td style="padding: 1rem;">3</td>
+              <td style="padding: 1rem; color: #E74C3C;">$43.33</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Spending Over Time -->
+      <div class="card">
+        <h2>Spending Over Time</h2>
+        <div style="min-height: 300px; display: flex; align-items: center; justify-content: center; background: var(--warm-bg); border-radius: 0.5rem; margin-top: 1rem;">
+          <div style="text-align: center;">
+            <div style="font-size: 3rem;">💰</div>
+            <p style="color: var(--text-neutral);">Bar chart (ApexCharts)</p>
+            <p style="font-size: 0.875rem; color: var(--text-neutral);">
+              Monthly spending: Jan $120 • Feb $340 • Mar $210
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>go-threads - Home</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <div class="container header-content">
+      <a href="index.html" class="logo">🧵 go-threads</a>
+      <nav>
+        <a href="index.html" class="active">Home</a>
+        <a href="wardrobe.html">Wardrobe</a>
+        <a href="upload.html">Upload</a>
+        <a href="outfits.html">Outfits</a>
+        <a href="analytics.html">Analytics</a>
+        <a href="settings.html">Settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <div class="card">
+        <h1>Welcome to go-threads</h1>
+        <p>Your privacy-first digital wardrobe manager.</p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value">24</div>
+          <div class="stat-label">Total Items</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">8</div>
+          <div class="stat-label">Outfits Created</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">$42</div>
+          <div class="stat-label">Avg Cost Per Wear</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">15</div>
+          <div class="stat-label">Items This Month</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Quick Actions</h2>
+        <div class="grid grid-3">
+          <a href="upload.html" class="btn btn-primary">Upload New Item</a>
+          <a href="outfit-builder.html" class="btn btn-primary">Create Outfit</a>
+          <a href="wardrobe.html" class="btn btn-secondary">View Wardrobe</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Recent Items</h2>
+        <div class="grid grid-4" id="recent-items">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/app.js"></script>
+  <script>
+    // Render recent items on home page
+    renderItemGrid(uploadedItems.slice(0, 4), 'recent-items');
+  </script>
+</body>
+</html>

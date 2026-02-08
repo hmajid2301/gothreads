@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Outfits - go-threads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <div class="container header-content">
+      <a href="index.html" class="logo">🧵 go-threads</a>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="wardrobe.html">Wardrobe</a>
+        <a href="upload.html">Upload</a>
+        <a href="outfits.html" class="active">Outfits</a>
+        <a href="analytics.html">Analytics</a>
+        <a href="settings.html">Settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <div class="toolbar">
+        <h1>My Outfits</h1>
+        <div class="toolbar-actions">
+          <a href="outfit-builder.html" class="btn btn-primary">+ Create Outfit</a>
+        </div>
+      </div>
+
+      <div class="grid grid-3">
+        <!-- Outfit Card 1 -->
+        <div class="card" style="padding: 0; cursor: pointer;" onclick="window.location.href='outfit-builder.html'">
+          <div style="position: relative; height: 300px; background: var(--warm-bg); display: flex; align-items: center; justify-content: center; overflow: hidden;">
+            <!-- Composite preview of items -->
+            <div style="position: absolute; width: 100px; top: 50px; left: 50px;">
+              <img src="https://via.placeholder.com/100/4A90E2/ffffff?text=Jeans" alt="Jeans" style="width: 100%;">
+            </div>
+            <div style="position: absolute; width: 80px; top: 30px; left: 120px;">
+              <img src="https://via.placeholder.com/80/F5F5F5/333333?text=Tee" alt="T-Shirt" style="width: 100%;">
+            </div>
+            <div style="position: absolute; width: 60px; top: 180px; left: 90px;">
+              <img src="https://via.placeholder.com/60/E74C3C/ffffff?text=Shoes" alt="Shoes" style="width: 100%;">
+            </div>
+          </div>
+          <div style="padding: 1.5rem;">
+            <h3 style="margin-bottom: 0.5rem;">Casual Friday</h3>
+            <p style="color: var(--text-neutral); font-size: 0.875rem;">3 items • Worn 5 times</p>
+            <div style="margin-top: 1rem;">
+              <span style="background: var(--warm-bg); padding: 0.25rem 0.75rem; border-radius: 1rem; font-size: 0.75rem; color: var(--text-neutral);">⭐ 4.5</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Outfit Card 2 -->
+        <div class="card" style="padding: 0; cursor: pointer;" onclick="window.location.href='outfit-builder.html'">
+          <div style="position: relative; height: 300px; background: var(--warm-bg); display: flex; align-items: center; justify-content: center;">
+            <div style="position: absolute; width: 100px; top: 60px; left: 60px;">
+              <img src="https://via.placeholder.com/100/34495E/ffffff?text=Chinos" alt="Chinos" style="width: 100%;">
+            </div>
+            <div style="position: absolute; width: 90px; top: 40px; left: 100px;">
+              <img src="https://via.placeholder.com/90/000000/ffffff?text=Jacket" alt="Jacket" style="width: 100%;">
+            </div>
+          </div>
+          <div style="padding: 1.5rem;">
+            <h3 style="margin-bottom: 0.5rem;">Date Night</h3>
+            <p style="color: var(--text-neutral); font-size: 0.875rem;">4 items • Worn 2 times</p>
+            <div style="margin-top: 1rem;">
+              <span style="background: var(--warm-bg); padding: 0.25rem 0.75rem; border-radius: 1rem; font-size: 0.75rem; color: var(--text-neutral);">⭐ 5.0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Outfit Card 3 -->
+        <div class="card" style="padding: 0; cursor: pointer;" onclick="window.location.href='outfit-builder.html'">
+          <div style="position: relative; height: 300px; background: var(--warm-bg); display: flex; align-items: center; justify-content: center;">
+            <div style="position: absolute; width: 90px; top: 50px; left: 70px;">
+              <img src="https://via.placeholder.com/90/95A5A6/ffffff?text=Hoodie" alt="Hoodie" style="width: 100%;">
+            </div>
+            <div style="position: absolute; width: 100px; top: 100px; left: 50px;">
+              <img src="https://via.placeholder.com/100/4A90E2/ffffff?text=Jeans" alt="Jeans" style="width: 100%;">
+            </div>
+          </div>
+          <div style="padding: 1.5rem;">
+            <h3 style="margin-bottom: 0.5rem;">Cozy Weekend</h3>
+            <p style="color: var(--text-neutral); font-size: 0.875rem;">2 items • Worn 8 times</p>
+            <div style="margin-top: 1rem;">
+              <span style="background: var(--warm-bg); padding: 0.25rem 0.75rem; border-radius: 1rem; font-size: 0.75rem; color: var(--text-neutral);">⭐ 4.0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State / Create New -->
+        <div class="card" style="padding: 0; cursor: pointer; border: 2px dashed var(--primary);" onclick="window.location.href='outfit-builder.html'">
+          <div style="height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            <div style="font-size: 4rem; margin-bottom: 1rem;">➕</div>
+            <h3 style="color: var(--primary);">Create New Outfit</h3>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tips -->
+      <div class="card" style="margin-top: 2rem;">
+        <h2>Outfit Tips</h2>
+        <ul style="line-height: 2;">
+          <li>⭐ <strong>Rate your outfits</strong> - Track which combinations you and others love</li>
+          <li>📸 <strong>Share outfits</strong> - Get feedback from friends with public links</li>
+          <li>📅 <strong>Plan ahead</strong> - Create outfits for upcoming events</li>
+          <li>♻️ <strong>Mix and match</strong> - Try new combinations with existing items</li>
+        </ul>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

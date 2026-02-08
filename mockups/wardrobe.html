@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Wardrobe - go-threads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <div class="container header-content">
+      <a href="index.html" class="logo">🧵 go-threads</a>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="wardrobe.html" class="active">Wardrobe</a>
+        <a href="upload.html">Upload</a>
+        <a href="outfits.html">Outfits</a>
+        <a href="analytics.html">Analytics</a>
+        <a href="settings.html">Settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <div class="toolbar">
+        <h1>My Wardrobe</h1>
+        <div class="toolbar-actions">
+          <select style="padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+            <option>All Categories</option>
+            <option>Tops</option>
+            <option>Bottoms</option>
+            <option>Shoes</option>
+            <option>Outerwear</option>
+            <option>Accessories</option>
+          </select>
+          <a href="upload.html" class="btn btn-primary">+ Add Item</a>
+        </div>
+      </div>
+
+      <div class="grid grid-4" id="wardrobe-grid">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

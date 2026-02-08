@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gothreads
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  migrate:
+    image: gomicro/goose:3.25.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: [
+      "goose", "-dir", "/migrations", "postgres",
+      "host=postgres port=5432 user=postgres password=postgres dbname=gothreads sslmode=disable",
+      "up"
+    ]
+    volumes:
+      - ./backend/store/db/sqlc/migrations:/migrations:ro
+    restart: "no"
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: server -s3 -dir=/data
+    ports:
+      - "8333:8333"
+      - "9333:9333"
+      - "19333:19333"
+    volumes:
+      - seaweedfs-data:/data
+    environment:
+      WEED_S3_ACCESS_KEY: admin
+      WEED_S3_SECRET_KEY: admin123
+
+  mock-oauth2:
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    ports:
+      - "8090:8090"
+    environment:
+      SERVER_PORT: 8090
+      JSON_CONFIG: |
+        {
+          "interactiveLogin": true,
+          "httpServer": "NettyWrapper",
+          "tokenCallbacks": []
+        }
+
+  rembg:
+    image: danielgatis/rembg:latest
+    ports:
+      - "5000:5000"
+    environment:
+      MODEL: u2net
+
+volumes:
+  postgres-data:
+  seaweedfs-data:

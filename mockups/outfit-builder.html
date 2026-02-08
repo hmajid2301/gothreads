@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outfit Builder - go-threads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <div class="container header-content">
+      <a href="index.html" class="logo">🧵 go-threads</a>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="wardrobe.html">Wardrobe</a>
+        <a href="upload.html">Upload</a>
+        <a href="outfits.html">Outfits</a>
+        <a href="analytics.html">Analytics</a>
+        <a href="settings.html">Settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <div class="toolbar">
+        <h1>Create Outfit</h1>
+        <div class="toolbar-actions">
+          <button class="btn btn-secondary" onclick="currentOutfit = []; document.querySelector('.outfit-canvas').innerHTML = ''; showToast('Canvas cleared')">Clear Canvas</button>
+          <button class="btn btn-primary" id="save-outfit">Save Outfit</button>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 3fr 1fr; gap: 1.5rem;">
+        <div class="card" style="padding: 0;">
+          <div style="padding: 1.5rem; border-bottom: 2px solid var(--border);">
+            <h2 style="margin: 0;">Outfit Canvas</h2>
+            <p style="color: var(--text-neutral); font-size: 0.875rem; margin-top: 0.5rem;">
+              Click items from the right sidebar to add them. Drag to position.
+            </p>
+          </div>
+          <div class="outfit-canvas" id="outfit-canvas">
+            <!-- Items dragged here will be positioned absolutely -->
+          </div>
+          <div style="padding: 1.5rem; border-top: 2px solid var(--border); background: var(--warm-bg);">
+            <p style="color: var(--text-neutral); font-size: 0.875rem; text-align: center;">
+              💡 Tip: Drag items to arrange them. Click the background of an item to bring it forward.
+            </p>
+          </div>
+        </div>
+
+        <div class="item-picker" id="item-picker">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 1.5rem;">
+        <h3>How to Build an Outfit</h3>
+        <ol style="line-height: 2;">
+          <li>Click on items from the sidebar to add them to the canvas</li>
+          <li>Drag items around to position them</li>
+          <li>Layer items by dragging - items on top have higher z-index</li>
+          <li>Click "Save Outfit" when you're happy with the arrangement</li>
+        </ol>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

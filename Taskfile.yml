@@ -3,49 +3,50 @@ version: '3'
 vars:
   BACKEND_DIR: ./backend
   FRONTEND_DIR: ./frontend
+  MOCKUPS_DIR: ./mockups
 
 tasks:
   # Development workflow
-  dev:
+  "dev":
     desc: Start development environment (backend + frontend + services)
     cmds:
       - task: docker:up
       - task: db:migrate
       - concurrently "task dev:backend" "task dev:frontend" "task dev:watch"
 
-  dev:backend:
+  "dev:backend":
     desc: Start backend with live reload
     dir: "{{.BACKEND_DIR}}"
     cmd: air
 
-  dev:frontend:
+  "dev:frontend":
     desc: Start Vite dev server for Svelte component
     dir: "{{.FRONTEND_DIR}}"
     cmd: bun run dev
 
-  dev:watch:
+  "dev:watch":
     desc: Watch for changes (templ, tailwind)
     cmds:
       - concurrently "task watch:templ" "task watch:tailwind"
 
-  watch:templ:
+  "watch:templ":
     desc: Watch templ files and regenerate
     dir: "{{.BACKEND_DIR}}"
     cmd: templ generate -watch -proxy=http://localhost:8080
 
-  watch:tailwind:
+  "watch:tailwind":
     desc: Watch tailwind input and rebuild
     dir: "{{.BACKEND_DIR}}"
     cmd: tailwindcss -i ./static/css/input.css -o ./static/css/output.css --watch
 
   # Build tasks
-  build:
+  "build":
     desc: Build both backend and frontend
     cmds:
       - task: build:backend
       - task: build:frontend
 
-  build:backend:
+  "build:backend":
     desc: Build backend binary
     dir: "{{.BACKEND_DIR}}"
     cmds:
@@ -53,7 +54,7 @@ tasks:
       - tailwindcss -i ./static/css/input.css -o ./static/css/output.css --minify
       - go build -o ../bin/gothreads main.go
 
-  build:frontend:
+  "build:frontend":
     desc: Build Svelte component to single JS file
     dir: "{{.FRONTEND_DIR}}"
     cmds:
@@ -61,33 +62,33 @@ tasks:
       - bun run build
       - echo "✅ Svelte component built to backend/static/js/outfit-canvas.js"
 
-  build:nix:
+  "build:nix":
     desc: Build with Nix
     cmd: nix build
 
-  build:container:
+  "build:container":
     desc: Build Docker container with Nix
     cmd: nix build .#container
 
   # Code generation
-  generate:
+  "generate":
     desc: Generate all code (sqlc, templ, mocks)
     cmds:
       - task: generate:sqlc
       - task: generate:templ
       - task: generate:mocks
 
-  generate:sqlc:
+  "generate:sqlc":
     desc: Generate sqlc code from queries
     dir: "{{.BACKEND_DIR}}"
     cmd: sqlc generate
 
-  generate:templ:
+  "generate:templ":
     desc: Generate templ Go code from templates
     dir: "{{.BACKEND_DIR}}"
     cmd: templ generate
 
-  generate:mocks:
+  "generate:mocks":
     desc: Generate mocks with mockery
     dir: "{{.BACKEND_DIR}}"
     cmd: mockery
@@ -98,32 +99,32 @@ tasks:
     cmd: gomod2nix
 
   # Database tasks
-  db:migrate:
+  "db:migrate":
     desc: Run database migrations
     dir: "{{.BACKEND_DIR}}"
     cmd: goose -dir store/db/sqlc/migrations postgres "${GOTHREADS_DB_DATABASE_URL}" up
 
-  db:migrate:down:
+  "db:migrate:down":
     desc: Rollback last migration
     dir: "{{.BACKEND_DIR}}"
     cmd: goose -dir store/db/sqlc/migrations postgres "${GOTHREADS_DB_DATABASE_URL}" down
 
-  db:migrate:status:
+  "db:migrate:status":
     desc: Show migration status
     dir: "{{.BACKEND_DIR}}"
     cmd: goose -dir store/db/sqlc/migrations postgres "${GOTHREADS_DB_DATABASE_URL}" status
 
-  db:migrate:create:
-    desc: Create new migration (usage: task db:migrate:create -- name_of_migration)
+  "db:migrate:create":
+    desc: "Create new migration (usage: task db:migrate:create -- name_of_migration)"
     dir: "{{.BACKEND_DIR}}"
     cmd: goose -dir store/db/sqlc/migrations create {{.CLI_ARGS}} sql
 
-  db:seed:
+  "db:seed":
     desc: Seed database with test data
     dir: "{{.BACKEND_DIR}}"
     cmd: psql "${GOTHREADS_DB_DATABASE_URL}" -f store/db/sqlc/seeds/seed.sql
 
-  db:reset:
+  "db:reset":
     desc: Reset database (drop, create, migrate, seed)
     cmds:
       - dropdb --if-exists -h localhost -p 15432 -U postgres gothreads || true
@@ -132,35 +133,35 @@ tasks:
       - task: db:seed
 
   # Docker tasks
-  docker:up:
+  "docker:up":
     desc: Start Docker Compose services
     cmd: docker compose up -d
 
-  docker:down:
+  "docker:down":
     desc: Stop Docker Compose services
     cmd: docker compose down
 
-  docker:logs:
+  "docker:logs":
     desc: Show Docker Compose logs
     cmd: docker compose logs -f
 
-  docker:ps:
+  "docker:ps":
     desc: Show running containers
     cmd: docker compose ps
 
-  test:
+  "test":
     desc: Run all tests
     cmds:
       - task: test:unit
       - task: test:integration
       - task: test:e2e
 
-  test:unit:
+  "test:unit":
     desc: Run unit tests
     dir: "{{.BACKEND_DIR}}"
     cmd: gotestsum --format testname -- -race -coverprofile=coverage.out ./service/... ./store/...
 
-  test:integration:
+  "test:integration":
     desc: Run integration tests
     dir: "{{.BACKEND_DIR}}"
     cmd: gotestsum --format testname -- -race -tags=integration ./transport/http/handlers/...
@@ -175,52 +176,58 @@ tasks:
     dir: "{{.BACKEND_DIR}}"
     cmd: gotestsum --format testname ../tests/e2e/...
 
-  test:coverage:
+  "test:coverage":
     desc: Show test coverage report
     dir: "{{.BACKEND_DIR}}"
     cmd: go tool cover -html=coverage.out
 
   # Linting & Formatting
-  lint:
+  "lint":
     desc: Run all linters
     cmds:
       - task: lint:go
       - task: lint:frontend
       - task: lint:sql
 
-  lint:go:
+  "lint:go":
     desc: Lint Go code
     dir: "{{.BACKEND_DIR}}"
     cmd: golangci-lint run
 
-  lint:frontend:
+  "lint:frontend":
     desc: Lint frontend code
     dir: "{{.FRONTEND_DIR}}"
     cmd: pnpm lint
 
-  lint:sql:
+  "lint:sql":
     desc: Lint SQL files
     dir: "{{.BACKEND_DIR}}"
     cmd: sqlfluff lint store/db/sqlc/query.sql
 
-  fmt:
+  "fmt":
     desc: Format code
     cmds:
       - task: fmt:go
       - task: fmt:templ
       - task: fmt:frontend
 
-  fmt:go:
+  "fmt:go":
     desc: Format Go code
     dir: "{{.BACKEND_DIR}}"
     cmd: gofmt -w -s .
 
-  fmt:templ:
+  "fmt:templ":
     desc: Format Templ files
     dir: "{{.BACKEND_DIR}}"
     cmd: templ fmt transport/http/views
 
-  fmt:frontend:
+  "fmt:frontend":
     desc: Format frontend code
     dir: "{{.FRONTEND_DIR}}"
     cmd: pnpm format
+
+  # Mockup tasks
+  "mockups:dev":
+    desc: Start mockup server with AI features (port 8556)
+    dir: "{{.MOCKUPS_DIR}}/api"
+    cmd: go run main.go

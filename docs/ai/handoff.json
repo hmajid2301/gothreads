@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "project": {
+    "name": "go-threads",
+    "description": "Privacy-first, self-hosted digital wardrobe manager",
+    "version": "0.1.0-dev",
+    "repository": "https://github.com/yourusername/gothreads",
+    "status": "planning_complete",
+    "lastUpdated": "2026-02-08"
+  },
+
+  "context": {
+    "summary": "Digital wardrobe app for cataloging clothing, creating outfits, tracking wear frequency, and gaining style insights. All data self-hosted. Uses hybrid frontend (HTMX + Alpine + Svelte canvas).",
+    "primaryUser": "Self-hosters who want to track their wardrobe without cloud dependencies",
+    "keyFeatures": [
+      "Upload photos with AI background removal",
+      "Drag-drop outfit canvas builder",
+      "Cost-per-wear analytics",
+      "Outfit calendar with weather integration",
+      "Public outfit sharing via short links",
+      "PWA with offline support"
+    ]
+  },
+
+  "techStack": {
+    "backend": {
+      "language": "Go 1.23+",
+      "framework": "net/http with go-pkgz/routegroup",
+      "templating": "Templ (type-safe HTML)",
+      "database": "PostgreSQL 18",
+      "orm": "sqlc (code generation from SQL)",
+      "migrations": "goose",
+      "storage": "SeaweedFS (S3-compatible)",
+      "auth": "OAuth2/OIDC"
+    },
+    "frontend": {
+      "primary": "HTMX",
+      "interactivity": "Alpine.js",
+      "outfitCanvas": "Svelte (single component)",
+      "styling": "TailwindCSS + DaisyUI",
+      "charts": "ApexCharts",
+      "packageManager": "Bun"
+    },
+    "ai": {
+      "backgroundRemoval": "rembg (local Docker sidecar)",
+      "vision": "Ollama with llava:7b (local, privacy-first)",
+      "text": "Ollama with llama3.2:3b (local)",
+      "fallback": "llama.cpp CLI (optional, for embedded use)",
+      "pattern": "Strategy pattern with provider interface"
+    },
+    "infrastructure": {
+      "build": "Nix Flakes with gomod2nix",
+      "containers": "Docker Compose",
+      "deployment": "NixOS module (planned)"
+    }
+  },
+
+  "files": {
+    "critical": [
+      {"path": "docs/ARCHITECTURE.md", "purpose": "Technical decisions and patterns"},
+      {"path": "docs/SPEC.md", "purpose": "Product requirements and features"},
+      {"path": "docs/ai/IMPLEMENTATION_TASKS.md", "purpose": "Detailed task checklist with code snippets"},
+      {"path": "docs/ai/HANDOFF.md", "purpose": "Human-readable handoff document"},
+      {"path": "mockups/", "purpose": "11 interactive HTML prototypes demonstrating UX"}
+    ],
+    "configuration": [
+      {"path": "flake.nix", "purpose": "Nix development environment"},
+      {"path": "docker-compose.yml", "purpose": "Development services (PostgreSQL, SeaweedFS, oauth, rembg, ollama)"},
+      {"path": "Taskfile.yml", "purpose": "Task automation commands"}
+    ],
+    "reference": [
+      {"path": "/home/haseebmajid/Documents/go-routinely/go-routinely-main/", "purpose": "Reference project for Go patterns"}
+    ]
+  },
+
+  "mockups": {
+    "location": "mockups/",
+    "howToView": "Open mockups/index.html in browser, or run: python3 -m http.server 8000",
+    "pages": [
+      {"file": "login.html", "purpose": "OAuth login flow", "priority": "low"},
+      {"file": "index.html", "purpose": "Dashboard with stats", "priority": "medium"},
+      {"file": "upload.html", "purpose": "Drag-drop file upload", "priority": "high"},
+      {"file": "item-detail.html", "purpose": "Edit item metadata", "priority": "high"},
+      {"file": "wardrobe.html", "purpose": "Item grid with filtering", "priority": "high"},
+      {"file": "outfit-builder.html", "purpose": "Drag-drop canvas (CORE FEATURE)", "priority": "critical"},
+      {"file": "outfits.html", "purpose": "Outfit gallery", "priority": "medium"},
+      {"file": "calendar.html", "purpose": "Outfit planning calendar", "priority": "low"},
+      {"file": "analytics.html", "purpose": "Charts and statistics", "priority": "medium"},
+      {"file": "settings.html", "purpose": "User preferences", "priority": "low"},
+      {"file": "share.html", "purpose": "Public outfit view", "priority": "low"}
+    ],
+    "interactiveFeatures": [
+      "LocalStorage persistence (simulates backend)",
+      "Drag-and-drop canvas with z-index control",
+      "Modal dialogs for confirmations",
+      "Toast notifications",
+      "File upload with progress simulation",
+      "Category filtering",
+      "Touch support for mobile"
+    ]
+  },
+
+  "nextSteps": {
+    "immediate": [
+      {
+        "task": "Scaffold backend",
+        "commands": ["cd backend", "go mod init github.com/yourusername/gothreads"],
+        "files": ["backend/go.mod", "backend/main.go"]
+      },
+      {
+        "task": "Create directory structure",
+        "commands": ["mkdir -p backend/{cmd,config,service,store/db/sqlc/{migrations,seeds},transport/http/{handlers,middleware,views/{components,layouts,pages}},static/{css,js,icons}}"],
+        "files": ["backend/*/"]
+      },
+      {
+        "task": "Copy config pattern from go-routinely",
+        "source": "/home/haseebmajid/Documents/go-routinely/go-routinely-main/config/",
+        "destination": "backend/config/",
+        "adapt": ["Change struct names", "Add S3 config", "Add AI config"]
+      },
+      {
+        "task": "Create first migration",
+        "file": "backend/store/db/sqlc/migrations/00001_create_users.sql",
+        "schema": "See docs/ai/IMPLEMENTATION_TASKS.md for SQL"
+      }
+    ],
+    "phase1_foundation": [
+      "Initialize Go module",
+      "Setup config package",
+      "Create database migrations (10 tables)",
+      "Generate sqlc code",
+      "Create pgx connection pool"
+    ],
+    "phase2_services": [
+      "User service (CRUD + GDPR deletion)",
+      "Item service (CRUD + pagination + wear tracking)",
+      "Outfit service (CRUD + item positions)",
+      "Analytics service (stats aggregation)"
+    ],
+    "phase3_http": [
+      "Auth middleware (OIDC)",
+      "Item handlers",
+      "Outfit handlers",
+      "Upload handlers with SSE"
+    ]
+  },
+
+  "decisions": {
+    "hybridFrontend": {
+      "what": "HTMX for 95% of UI, Alpine.js for simple interactivity, Svelte only for outfit canvas",
+      "why": "Simpler than full SPA, smaller bundle, better SSR, matches project philosophy"
+    },
+    "noClamAV": {
+      "what": "Removed virus scanning from MVP",
+      "why": "File validation sufficient for self-hosted app, can add later",
+      "mitigation": "Validate file type, size, magic number"
+    },
+    "bun": {
+      "what": "Using Bun instead of pnpm/npm for frontend",
+      "why": "Faster, simpler, built-in TypeScript support"
+    },
+    "cursorPagination": {
+      "what": "Using cursor-based pagination, not offset",
+      "why": "Better performance at scale, no skipped items on concurrent writes"
+    },
+    "sseNotWebsockets": {
+      "what": "Using SSE for real-time AI processing updates",
+      "why": "Simpler than WebSockets, HTTP-native, sufficient for unidirectional updates"
+    }
+  },
+
+  "openQuestions": [
+    "Which OAuth provider to configure first?",
+    "CI/CD: GitLab CI or GitHub Actions?",
+    "Secrets management approach?"
+  ],
+
+  "commands": {
+    "setup": "nix develop && docker compose up -d && task setup",
+    "dev": "task dev",
+    "test": "task test",
+    "build": "task build",
+    "migrate": "task db:migrate",
+    "generate": "task generate"
+  },
+
+  "resumptionTips": [
+    "Review mockups first (mockups/index.html) to understand UX",
+    "Read docs/ai/IMPLEMENTATION_TASKS.md for detailed task breakdown",
+    "Reference go-routinely for Go patterns - don't reinvent",
+    "Start with one endpoint working end-to-end before expanding",
+    "Use pgtestdb pattern for isolated test databases"
+  ]
+}

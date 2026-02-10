@@ -46,17 +46,29 @@ task generate         # Generate code (sqlc, templ, mocks)
 ## Stack
 
 - **Backend**: Go, HTMX, Templ, PostgreSQL, SeaweedFS
-- **Frontend**: Svelte, TailwindCSS, ApexCharts
-- **AI**: Local sidecars (rembg, OOTDiffusion)
+- **Frontend**: HTMX + Alpine.js (most UI), Svelte (outfit canvas only)
+- **AI**: Local sidecars (rembg for background removal)
 - **Auth**: OAuth2/OIDC (Authelia, Authentik)
-- **Build**: Nix Flakes, gomod2nix
+- **Build**: Nix Flakes, gomod2nix, Bun
+
+## Mockups
+
+Interactive HTML prototypes demonstrating the full UX:
+
+```bash
+cd mockups && python3 -m http.server 8000
+# Visit http://localhost:8000
+```
+
+11 pages: login, dashboard, upload, wardrobe, **outfit-builder** (drag-drop canvas), outfits, calendar, analytics, settings, share
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) - Technical decisions
 - [Specification](docs/SPEC.md) - Product requirements
 - [Getting Started](docs/GETTING_STARTED.md) - Development guide
-- [TODO](TODO.md) - Implementation checklist
+- [Implementation Tasks](docs/ai/IMPLEMENTATION_TASKS.md) - Full checklist
+- [Handoff](docs/ai/HANDOFF.md) - Project context for resuming work
 
 ## License
 

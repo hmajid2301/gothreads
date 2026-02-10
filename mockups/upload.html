@@ -24,19 +24,24 @@
   <main>
     <div class="container">
       <div class="card">
-        <h1>Upload New Item</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h1>Upload New Item</h1>
+          <div id="ai-status" style="font-size: 0.875rem;">
+            <span style="color: #95a5a6;">○ Checking AI...</span>
+          </div>
+        </div>
         <p>Add a new clothing item to your wardrobe. Take a photo or choose from your library.</p>
 
         <div class="upload-area" onclick="document.getElementById('upload-input').click()">
           <div class="upload-icon">📸</div>
           <h3>Click to upload or drag and drop</h3>
-          <p>JPEG, PNG, or WebP (max 10MB)</p>
-          <input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp">
+          <p>JPEG, PNG, WebP, or AVIF (max 10MB)</p>
+          <input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp,image/avif">
         </div>
 
         <div style="margin-top: 2rem; text-align: center;">
           <p style="color: var(--text-neutral);">
-            After uploading, you'll be able to add details like name, category, and price.
+            AI will automatically detect the clothing type and color. You can edit details after upload.
           </p>
         </div>
       </div>
@@ -49,6 +54,27 @@
           <li>👔 Lay item flat or hang it</li>
           <li>📏 Capture the full item in frame</li>
         </ul>
+      </div>
+
+      <div class="card" style="background: var(--warm-bg); border: 1px dashed var(--primary);">
+        <h3>AI Features (PoC)</h3>
+        <p style="margin-bottom: 1rem; color: var(--text-neutral);">
+          To enable AI-powered clothing analysis:
+        </p>
+        <pre style="background: #1a1a2e; color: #eee; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.875rem;">
+# Start Ollama and pull models (first time only)
+ollama serve
+ollama pull llava:7b        # Fast model (default)
+ollama pull llava:13b       # Enhanced brand detection (optional, slower)
+
+# Start the mockup server (serves files + AI API)
+task mockups:dev
+
+# Or manually:
+cd mockups/api && go run main.go</pre>
+        <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-neutral);">
+          Server runs on <code>http://localhost:8556</code>. Default uses fast 7b model. Use "✨ Detect with AI (13b)" button on item detail page for enhanced brand detection (2-3 min per image).
+        </p>
       </div>
     </div>
   </main>

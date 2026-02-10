@@ -84,9 +84,39 @@
               <textarea id="item-notes" rows="3" placeholder="Any additional details..."></textarea>
             </div>
 
-            <div style="display: flex; gap: 1rem;">
-              <button class="btn btn-primary" onclick="window.location.href='wardrobe.html'">Save Item</button>
+            <div class="form-group">
+              <label>Brand</label>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input type="text" id="item-brand" placeholder="e.g., MR MARVIS" style="flex: 1;">
+                <button id="enhance-brand-btn" class="btn btn-secondary" style="padding: 0.5rem 0.75rem; font-size: 0.875rem; white-space: nowrap;">
+                  ✨ Detect with AI (13b)
+                </button>
+              </div>
+              <p style="font-size: 0.75rem; color: var(--text-neutral); margin-top: 0.25rem;">
+                Use enhanced AI model for better brand label detection (slower)
+              </p>
+            </div>
+
+            <div class="form-group" id="tags-section" style="display: none;">
+              <label>
+                Tags
+                <button id="regenerate-tags-btn" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-left: 0.5rem;">
+                  🔄 Regenerate with AI
+                </button>
+              </label>
+              <div id="item-tags" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;"></div>
+            </div>
+
+            <div id="ai-analysis-section" style="display: none; margin-bottom: 1.5rem; padding: 1rem; background: var(--warm-bg); border-radius: 0.5rem;">
+              <label style="font-size: 0.875rem; color: var(--text-neutral);">AI Analysis</label>
+              <p id="ai-analysis-text" style="font-size: 0.875rem; margin-top: 0.5rem;"></p>
+            </div>
+
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+              <button id="save-item-btn" class="btn btn-primary">Save Item</button>
+              <button id="wear-item-btn" class="btn btn-secondary">👔 Log Wear</button>
               <button class="btn btn-secondary" onclick="window.location.href='wardrobe.html'">Cancel</button>
+              <button id="delete-item-btn" class="btn" style="background: #E74C3C; color: white;">Delete</button>
             </div>
           </div>
         </div>

@@ -26,8 +26,16 @@
       <div class="toolbar">
         <h1>Create Outfit</h1>
         <div class="toolbar-actions">
-          <button class="btn btn-secondary" onclick="currentOutfit = []; document.querySelector('.outfit-canvas').innerHTML = ''; showToast('Canvas cleared')">Clear Canvas</button>
+          <button class="btn btn-secondary" onclick="document.getElementById('body-upload-input').click()">
+            📸 Upload Body/Mannequin
+          </button>
+          <button class="btn btn-primary" id="dress-with-ai" style="background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);">
+            ✨ Dress with AI
+          </button>
+          <button class="btn btn-secondary" onclick="removeBodyBackground()">Remove Background</button>
+          <button class="btn btn-secondary" onclick="clearCanvas()">Clear Canvas</button>
           <button class="btn btn-primary" id="save-outfit">Save Outfit</button>
+          <input type="file" id="body-upload-input" accept="image/jpeg,image/png,image/webp,image/avif" style="display: none;">
         </div>
       </div>
 
@@ -57,9 +65,11 @@
       <div class="card" style="margin-top: 1.5rem;">
         <h3>How to Build an Outfit</h3>
         <ol style="line-height: 2;">
+          <li>📸 <strong>Optional:</strong> Upload a body/mannequin photo as background</li>
           <li>Click on items from the sidebar to add them to the canvas</li>
-          <li>Drag items around to position them</li>
-          <li>Layer items by dragging - items on top have higher z-index</li>
+          <li>Drag items around to position them on the body</li>
+          <li>Layer items by clicking - last clicked item moves to top</li>
+          <li>Use "Remove Background" button to clear the body image</li>
           <li>Click "Save Outfit" when you're happy with the arrangement</li>
         </ol>
       </div>

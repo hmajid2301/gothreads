@@ -75,7 +75,13 @@
           direnv
         ];
 
-        allPackages = backendPackages ++ frontendPackages ++ testPackages ++ devPackages;
+        # AI/LLM packages (optional - can use Docker Ollama instead)
+        aiPackages = with pkgs; [
+          ollama
+          # llama-cpp # Uncomment for llama.cpp CLI
+        ];
+
+        allPackages = backendPackages ++ frontendPackages ++ testPackages ++ devPackages ++ aiPackages;
 
         devShellPackages =
           allPackages
@@ -188,15 +194,19 @@
             export AI_WORKER_CONCURRENCY=3
             export ENABLE_GPU=false
 
-            # Load private environment variables
-            if [ -f .envrc ]; then
-              source .envrc
-            fi
+            # Ollama configuration (local LLM)
+            export GOTHREADS_OLLAMA_URL=http://localhost:11434
+            export GOTHREADS_OLLAMA_VISION_MODEL=llava:7b
+            export GOTHREADS_OLLAMA_TEXT_MODEL=llama3.2:3b
 
-            echo "🧵 go-threads development environment loaded"
-            echo "📁 Backend: ./backend"
-            echo "📁 Frontend: ./frontend"
-            echo "🚀 Run 'task dev' to start development servers"
+            # Only show welcome message once per shell session
+            if [ -z "$GOTHREADS_SHELL_INITIALIZED" ]; then
+              export GOTHREADS_SHELL_INITIALIZED=1
+              echo "🧵 go-threads development environment loaded"
+              echo "📁 Backend: ./backend"
+              echo "📁 Frontend: ./frontend"
+              echo "🚀 Run 'task dev' to start development servers"
+            fi
           '';
         };
       }

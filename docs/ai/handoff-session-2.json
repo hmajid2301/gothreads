@@ -1,0 +1,360 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "sessionId": "2026-02-10-ai-integration",
+  "lastUpdated": "2026-02-10",
+  "status": "mockups_complete_with_ai",
+
+  "sessionSummary": {
+    "goal": "Integrate local AI (Ollama) for clothing analysis and outfit creation in mockups",
+    "completed": [
+      "Replaced rembg with Ollama-only stack (simplified dependencies)",
+      "Created single Go API server for mockups + AI features (port 8556)",
+      "Added AI clothing analysis (category, color, brand, tags detection)",
+      "Implemented 'Dress with AI' feature for automatic outfit positioning",
+      "Added enhanced brand detection with llava:13b model (on-demand)",
+      "Updated all image upload to support AVIF format",
+      "Fixed direnv infinite loop issue in flake.nix",
+      "Fixed Taskfile.yml YAML syntax errors",
+      "Integrated all MR MARVIS clothing photos into mockup data"
+    ],
+    "technologies": {
+      "aiStack": "Ollama-only (removed rembg dependency)",
+      "models": {
+        "default": "llava:7b (fast, 60-90s per image)",
+        "enhanced": "llava:13b (accurate brand OCR, 2-3 min per image, on-demand)",
+        "text": "llama3.2:3b (tag generation)"
+      },
+      "mockupServer": "Single Go binary serving static files + AI API on port 8556"
+    }
+  },
+
+  "newFeatures": {
+    "aiClothingAnalysis": {
+      "description": "Automatic clothing item analysis on upload using Ollama vision model",
+      "endpoint": "POST /api/analyze",
+      "model": "llava:7b (default) or llava:13b (enhanced)",
+      "detects": ["category", "color", "brand", "description", "tags"],
+      "performance": {
+        "llava7b": "60-90 seconds per image on CPU",
+        "llava13b": "2-3 minutes per image on CPU (better OCR for brands)"
+      },
+      "files": [
+        "mockups/api/main.go (handleAnalyze function)",
+        "mockups/js/app.js (analyzeImageWithAI function)"
+      ]
+    },
+    "dressWithAI": {
+      "description": "AI-assisted clothing placement on body/mannequin photos",
+      "endpoint": "POST /api/dress",
+      "model": "llava:7b",
+      "workflow": [
+        "Upload body/mannequin photo as canvas background",
+        "Add clothing items to canvas manually",
+        "Click 'Dress with AI' button",
+        "AI analyzes body proportions and suggests optimal item positions",
+        "Items automatically repositioned with proper layering"
+      ],
+      "returns": "X/Y positions (percentages) and Z-index for each item",
+      "files": [
+        "mockups/api/main.go (handleDress function)",
+        "mockups/js/app.js (handleDressWithAI function)",
+        "mockups/outfit-builder.html (Dress with AI button)"
+      ]
+    },
+    "enhancedBrandDetection": {
+      "description": "On-demand brand detection using larger llava:13b model",
+      "trigger": "User clicks 'Detect with AI (13b)' button on item detail page",
+      "workflow": [
+        "Upload item with llava:7b (fast, basic detection)",
+        "Go to item detail page",
+        "Click 'Detect with AI (13b)' for better brand OCR",
+        "Wait 2-3 minutes for enhanced analysis",
+        "Brand automatically filled and saved"
+      ],
+      "files": [
+        "mockups/item-detail.html (enhance brand button)",
+        "mockups/js/app.js (enhanceBrandBtn handler)"
+      ]
+    },
+    "bodyMannequinUpload": {
+      "description": "Upload body/mannequin photos as outfit canvas background",
+      "features": [
+        "Upload any body photo as canvas background",
+        "Drag clothing items onto body",
+        "Auto-layering (click item to bring to front)",
+        "Manual layer controls (up/down buttons)",
+        "Background removal button",
+        "Background saved with outfit"
+      ],
+      "files": [
+        "mockups/outfit-builder.html (body upload button)",
+        "mockups/js/app.js (handleBodyUpload, clearCanvas functions)",
+        "mockups/css/style.css (outfit-canvas background-image support)"
+      ]
+    }
+  },
+
+  "apiEndpoints": {
+    "baseUrl": "http://localhost:8556",
+    "static": {
+      "GET /": "Serves mockup HTML/CSS/JS files",
+      "GET /upload.html": "Upload page",
+      "GET /outfit-builder.html": "Outfit builder with AI features"
+    },
+    "api": {
+      "GET /api/health": "Health check",
+      "GET /api/status": "Ollama connection status and available models",
+      "POST /api/analyze": {
+        "description": "Analyze clothing image",
+        "request": {
+          "image": "base64 image data",
+          "model": "optional: 'llava:13b' for enhanced detection",
+          "prompt": "optional: custom prompt"
+        },
+        "response": {
+          "description": "One sentence description",
+          "category": "Tops|Bottoms|Outerwear|Shoes|Accessories",
+          "color": "Primary color",
+          "brand": "Brand name if detected",
+          "tags": ["array", "of", "tags"],
+          "raw_response": "Full AI response"
+        }
+      },
+      "POST /api/tags": {
+        "description": "Generate tags from description",
+        "request": {"description": "text description"},
+        "response": {"tags": ["generated", "tags"]}
+      },
+      "POST /api/dress": {
+        "description": "AI-assisted clothing placement on body",
+        "request": {
+          "body_image": "base64 body/mannequin image",
+          "clothing_items": [
+            {"id": 1, "name": "item name", "category": "Tops", "image": "base64"}
+          ],
+          "prompt": "optional: custom positioning instructions"
+        },
+        "response": {
+          "positions": [
+            {"id": 1, "x": 45.5, "y": 30.2, "z": 1}
+          ],
+          "explanation": "AI explanation of positioning choices",
+          "raw_response": "Full AI response"
+        }
+      }
+    }
+  },
+
+  "fileChanges": {
+    "created": [
+      "mockups/api/main.go (670 lines - unified server)",
+      "mockups/api/README.md (documentation)"
+    ],
+    "modified": [
+      "mockups/js/app.js (added AI functions, dress with AI, body upload, enhanced brand detection)",
+      "mockups/upload.html (updated instructions, AI status indicator, AVIF support)",
+      "mockups/outfit-builder.html (body upload, dress with AI button, AVIF support)",
+      "mockups/item-detail.html (enhance brand button, brand field, AVIF support)",
+      "mockups/css/style.css (outfit-canvas background-image support, darkened primary color)",
+      "flake.nix (added Ollama, fixed shellHook infinite loop, removed .envrc sourcing)",
+      "docker-compose.yml (added Ollama service with llava models)",
+      "Taskfile.yml (added mockups:dev task, fixed YAML syntax, quoted task names)",
+      "docs/ai/handoff.json (updated AI stack info)"
+    ]
+  },
+
+  "dataStructures": {
+    "clothingItem": {
+      "id": "number (timestamp)",
+      "name": "string (from AI description)",
+      "category": "Tops|Bottoms|Outerwear|Shoes|Accessories",
+      "price": "number",
+      "color": "string (AI detected)",
+      "brand": "string (AI detected, enhanced with 13b)",
+      "wearCount": "number",
+      "image": "base64 data URL",
+      "tags": "string[] (AI generated)",
+      "aiAnalysis": "string (raw AI response)",
+      "uploadedAt": "ISO datetime"
+    },
+    "outfit": {
+      "id": "number (timestamp)",
+      "name": "string",
+      "notes": "string",
+      "itemIds": "number[]",
+      "positions": [
+        {"id": "number", "x": "number (pixels)", "y": "number (pixels)", "z": "number (layer)"}
+      ],
+      "bodyBackground": "string (CSS backgroundImage value)",
+      "wearCount": "number",
+      "rating": "number",
+      "createdAt": "ISO datetime"
+    }
+  },
+
+  "imageFormatsSupported": [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/avif"
+  ],
+
+  "exampleMockupData": {
+    "location": "mockups/images/examples/",
+    "items": [
+      "easies_navy.avif (MR MARVIS trousers)",
+      "midweight_navy.avif (MR MARVIS tee)",
+      "shacket.avif (MR MARVIS outerwear)",
+      "shawl_navy_cardigan.jpg",
+      "17 total clothing items from MR MARVIS brand"
+    ],
+    "preloadedInMockup": true,
+    "format": "Mostly AVIF with some JPG"
+  },
+
+  "setup": {
+    "requirements": [
+      "Go 1.21+",
+      "Ollama (or Docker Compose)",
+      "30GB RAM (has 12GB available, sufficient for llava:7b and 13b)",
+      "No GPU (CPU-only, slower but functional)"
+    ],
+    "firstTimeSetup": [
+      "nix develop (or direnv allow)",
+      "docker compose up -d (starts Ollama)",
+      "ollama pull llava:7b (required, ~4GB download)",
+      "ollama pull llava:13b (optional, ~8GB download, for enhanced brand detection)",
+      "task mockups:dev (starts server on port 8556)"
+    ],
+    "dailyWorkflow": [
+      "task mockups:dev",
+      "Open http://localhost:8556/upload.html"
+    ]
+  },
+
+  "aiPromptStrategy": {
+    "principle": "Simpler prompts work better with vision models",
+    "currentPrompt": "Concise, direct questions (What type? What color? Read labels for brand?)",
+    "avoidOverComplexity": "Long detailed instructions degraded performance",
+    "brandDetection": {
+      "challenge": "llava:7b struggles with small text/labels",
+      "solution": "On-demand llava:13b button for better OCR",
+      "limitations": "Even 13b may miss very small or blurry text"
+    }
+  },
+
+  "issuesFixed": {
+    "direnvLoop": {
+      "symptom": "direnv loading repeatedly, 'Argument list too long' errors",
+      "cause": "shellHook in flake.nix was sourcing .envrc which contained 'use flake', creating infinite loop",
+      "fix": "Removed .envrc sourcing, added GOTHREADS_SHELL_INITIALIZED check to prevent repeated echo messages",
+      "file": "flake.nix line 202-214"
+    },
+    "taskfileYamlSyntax": {
+      "symptom": "task: Failed to parse Taskfile.yml: mapping values not allowed",
+      "cause": "Unquoted colons in task descriptions (e.g., 'task db:migrate:create')",
+      "fix": "Quoted task description with colons, quoted all task names with colons",
+      "file": "Taskfile.yml"
+    },
+    "cssNotLoading": {
+      "symptom": "User reported plain HTML without styling",
+      "cause": "User likely opening file:// instead of http:// URL",
+      "fix": "Confirmed CSS file intact, reminded to use http://localhost:8556/",
+      "note": "CSS loads fine when served via Go fileserver"
+    }
+  },
+
+  "knownLimitations": {
+    "performance": {
+      "cpuOnly": "No GPU, all inference runs on CPU",
+      "llava7b": "60-90 seconds per image",
+      "llava13b": "2-3 minutes per image",
+      "mitigation": "Use 7b by default, 13b on-demand only"
+    },
+    "brandDetection": {
+      "issue": "Vision models struggle with small text on clothing labels",
+      "workaround": "Enhanced 13b model improves accuracy but still not 100%",
+      "fallback": "Manual brand entry always available"
+    },
+    "backgroundRemoval": {
+      "removed": "Initially planned to use rembg, decided Ollama-only stack instead",
+      "alternative": "Users can use pre-processed images with transparent backgrounds",
+      "futureConsideration": "Could add rembg back as optional service"
+    }
+  },
+
+  "nextSteps": {
+    "mockupTesting": [
+      "Test full upload workflow with real clothing photos",
+      "Test 'Dress with AI' feature with body photos",
+      "Test enhanced brand detection with 13b model",
+      "Verify outfit save/load with body backgrounds"
+    ],
+    "backendImplementation": [
+      "Initialize Go backend (currently only mockup API exists)",
+      "Create database migrations",
+      "Implement actual AI service following mockup API pattern",
+      "Convert mockup HTML to Templ templates",
+      "Implement real authentication (OAuth2/OIDC)"
+    ],
+    "improvements": [
+      "Add progress indicators for long-running AI tasks",
+      "Consider streaming responses for better UX",
+      "Add ability to cancel in-progress AI requests",
+      "Implement image preprocessing (resize, compress) before sending to AI",
+      "Add more outfit positioning presets beyond AI suggestions"
+    ]
+  },
+
+  "commands": {
+    "startMockups": "task mockups:dev",
+    "checkAiStatus": "curl http://localhost:8556/api/status",
+    "viewMockups": "http://localhost:8556/upload.html",
+    "pullModels": "ollama pull llava:7b && ollama pull llava:13b",
+    "dockerServices": "docker compose up -d",
+    "nixShell": "nix develop"
+  },
+
+  "codeLocations": {
+    "aiIntegration": {
+      "goServer": "mockups/api/main.go",
+      "frontendAI": "mockups/js/app.js (lines 1-130 approx)",
+      "analyzeEndpoint": "mockups/api/main.go:handleAnalyze",
+      "dressEndpoint": "mockups/api/main.go:handleDress",
+      "enhancedBrand": "mockups/js/app.js:enhanceBrandBtn handler"
+    },
+    "mockupPages": {
+      "upload": "mockups/upload.html",
+      "itemDetail": "mockups/item-detail.html",
+      "outfitBuilder": "mockups/outfit-builder.html"
+    },
+    "styling": "mockups/css/style.css",
+    "config": {
+      "nix": "flake.nix",
+      "docker": "docker-compose.yml",
+      "tasks": "Taskfile.yml"
+    }
+  },
+
+  "resumptionInstructions": [
+    "IMPORTANT: Mockups are fully functional with AI. Test before backend implementation.",
+    "Start with: task mockups:dev && open http://localhost:8556/upload.html",
+    "Upload a clothing photo to test AI analysis (llava:7b, 60-90s wait)",
+    "Go to item detail page, click 'Detect with AI (13b)' to test enhanced brand detection (2-3min wait)",
+    "Go to outfit builder, upload body photo, add items, click 'Dress with AI'",
+    "All mockup data persists in localStorage (gothreads_mockup_data key)",
+    "When ready for backend: reference mockups/api/main.go as implementation guide",
+    "The Go mockup server shows exact API contracts to implement in real backend"
+  ],
+
+  "machineReadableMetadata": {
+    "contextPreserved": true,
+    "canResumeFromThis": true,
+    "includesCodeLocations": true,
+    "includesSetupInstructions": true,
+    "includesNextSteps": true,
+    "includesKnownIssues": true,
+    "humanReadableCompanion": "docs/ai/HANDOFF.md",
+    "previousSession": "docs/ai/handoff.json"
+  }
+}

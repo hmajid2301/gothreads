@@ -24,17 +24,32 @@
   <main>
     <div class="container">
       <div class="toolbar">
-        <h1>Create Outfit</h1>
-        <div class="toolbar-actions">
-          <button class="btn btn-secondary" onclick="document.getElementById('body-upload-input').click()">
-            📸 Upload Body/Mannequin
-          </button>
-          <button class="btn btn-primary" id="dress-with-ai" style="background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <h1 style="margin: 0;">Create Outfit</h1>
+            <p style="color: var(--text-neutral); font-size: 0.875rem; margin: 0.25rem 0 0 0;">
+              Select items from the right, then click "✨ Dress with AI" to position them automatically
+            </p>
+          </div>
+          <div id="ai-status" style="font-size: 0.875rem;">
+            <span style="color: #95a5a6;">○ Checking AI...</span>
+          </div>
+        </div>
+        <div class="toolbar-actions" style="margin-top: 1rem;">
+          <button class="btn btn-primary" id="dress-with-ai" style="background: linear-gradient(135deg, #E8807B 0%, #D96B66 100%); font-size: 1rem; padding: 0.75rem 1.5rem;">
             ✨ Dress with AI
           </button>
-          <button class="btn btn-secondary" onclick="removeBodyBackground()">Remove Background</button>
-          <button class="btn btn-secondary" onclick="clearCanvas()">Clear Canvas</button>
-          <button class="btn btn-primary" id="save-outfit">Save Outfit</button>
+          <button class="btn btn-secondary" id="rate-outfit-btn">
+            ⭐ Rate Outfit
+          </button>
+          <button class="btn btn-secondary" onclick="document.getElementById('body-upload-input').click()">
+            📸 Upload Your Photo
+          </button>
+          <button class="btn btn-secondary" onclick="useDefaultMannequin()">
+            🧍 Reset Mannequin
+          </button>
+          <button class="btn btn-secondary" onclick="clearCanvas()">Clear All</button>
+          <button class="btn btn-primary" id="save-outfit">💾 Save Outfit</button>
           <input type="file" id="body-upload-input" accept="image/jpeg,image/png,image/webp,image/avif" style="display: none;">
         </div>
       </div>
@@ -44,15 +59,20 @@
           <div style="padding: 1.5rem; border-bottom: 2px solid var(--border);">
             <h2 style="margin: 0;">Outfit Canvas</h2>
             <p style="color: var(--text-neutral); font-size: 0.875rem; margin-top: 0.5rem;">
-              Click items from the right sidebar to add them. Drag to position.
+              A mannequin is loaded by default. Add items from the right sidebar.
             </p>
           </div>
-          <div class="outfit-canvas" id="outfit-canvas">
+          <div class="outfit-canvas" id="outfit-canvas" style="background-color: #f8f8f8;">
             <!-- Items dragged here will be positioned absolutely -->
+            <div id="canvas-placeholder" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--text-neutral); pointer-events: none;">
+              <div style="font-size: 3rem; margin-bottom: 0.5rem;">👕</div>
+              <p style="margin: 0;">Click items from the right to add →</p>
+              <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Then click "✨ Dress with AI" to position them</p>
+            </div>
           </div>
           <div style="padding: 1.5rem; border-top: 2px solid var(--border); background: var(--warm-bg);">
-            <p style="color: var(--text-neutral); font-size: 0.875rem; text-align: center;">
-              💡 Tip: Drag items to arrange them. Click the background of an item to bring it forward.
+            <p style="color: var(--text-neutral); font-size: 0.875rem; text-align: center; margin: 0;">
+              💡 <strong>Quick Start:</strong> Select items → Click "✨ Dress with AI" → Items automatically positioned with proper layering
             </p>
           </div>
         </div>
@@ -62,16 +82,43 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top: 1.5rem;">
-        <h3>How to Build an Outfit</h3>
-        <ol style="line-height: 2;">
-          <li>📸 <strong>Optional:</strong> Upload a body/mannequin photo as background</li>
-          <li>Click on items from the sidebar to add them to the canvas</li>
-          <li>Drag items around to position them on the body</li>
-          <li>Layer items by clicking - last clicked item moves to top</li>
-          <li>Use "Remove Background" button to clear the body image</li>
-          <li>Click "Save Outfit" when you're happy with the arrangement</li>
-        </ol>
+      <div class="card" style="margin-top: 1.5rem; background: linear-gradient(135deg, #FFF5F4 0%, #FFE8E6 100%); border: 2px solid var(--primary);">
+        <h3 style="color: var(--primary); margin-top: 0;">✨ AI-Powered Outfit Styling</h3>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 1.5rem;">
+          <div>
+            <h4 style="margin-top: 0;">🚀 Quick Start (3 Steps)</h4>
+            <ol style="line-height: 2; font-size: 0.95rem;">
+              <li><strong>Select Items</strong> from the right sidebar</li>
+              <li><strong>Click "✨ Dress with AI"</strong></li>
+              <li><strong>Watch AI position everything!</strong></li>
+            </ol>
+          </div>
+
+          <div>
+            <h4 style="margin-top: 0;">🎯 What AI Does</h4>
+            <ul style="line-height: 2; font-size: 0.875rem; color: var(--text-neutral);">
+              <li>Places tops on upper body</li>
+              <li>Positions bottoms on lower body</li>
+              <li>Adds shoes at feet level</li>
+              <li>Layers outerwear on top</li>
+              <li>Proper Z-ordering (jacket over shirt)</li>
+            </ul>
+          </div>
+        </div>
+
+        <div style="padding: 1rem; background: white; border-radius: 0.5rem; border-left: 4px solid var(--primary);">
+          <p style="margin: 0; font-size: 0.875rem; color: var(--text-neutral);">
+            <strong>💡 Pro Tip:</strong> The default mannequin is perfect for testing! Add a t-shirt, pants, jacket, and shoes, then click "Dress with AI" to see them positioned with correct layering (jacket over t-shirt, shoes at bottom).
+          </p>
+        </div>
+
+        <div style="margin-top: 1rem; padding: 1rem; background: rgba(255, 255, 255, 0.5); border-radius: 0.5rem;">
+          <h4 style="margin-top: 0; font-size: 0.95rem;">Optional: Use Your Own Photo</h4>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin: 0;">
+            Click "📸 Upload Your Photo" to use a real body/mannequin photo. AI works best with front-facing photos showing full torso and legs.
+          </p>
+        </div>
       </div>
     </div>
   </main>

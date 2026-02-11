@@ -21,12 +21,14 @@ const (
 	defaultOllamaURL   = "http://localhost:11434"
 	defaultVisionModel = "llava:7b"
 	defaultTextModel   = "llama3.2:3b"
+	defaultRembgURL    = "http://localhost:5000"
 )
 
 var (
 	ollamaURL   = getEnv("OLLAMA_URL", defaultOllamaURL)
 	visionModel = getEnv("OLLAMA_VISION_MODEL", defaultVisionModel)
 	textModel   = getEnv("OLLAMA_TEXT_MODEL", defaultTextModel)
+	rembgURL    = getEnv("REMBG_URL", defaultRembgURL)
 )
 
 func getEnv(key, fallback string) string {
@@ -77,6 +79,102 @@ type TagsResponse struct {
 	Tags []string `json:"tags"`
 }
 
+// RemoveBgRequest for background removal
+type RemoveBgRequest struct {
+	Image string `json:"image"` // base64 encoded image
+}
+
+// RemoveBgResponse returns image with background removed
+type RemoveBgResponse struct {
+	Image string `json:"image"` // base64 encoded image with transparent background
+}
+
+// SuggestOutfitRequest for AI outfit recommendations
+type SuggestOutfitRequest struct {
+	Occasion string                 `json:"occasion"` // casual, formal, sporty, business, date, etc.
+	Weather  string                 `json:"weather"`  // hot, cold, mild, rainy, etc.
+	Items    []ClothingItemForMatch `json:"items"`    // available wardrobe items
+}
+
+// SuggestOutfitResponse returns suggested outfit
+type SuggestOutfitResponse struct {
+	SelectedItems []int    `json:"selected_items"` // IDs of items to wear
+	Reasoning     string   `json:"reasoning"`      // Why these items work together
+	Tips          []string `json:"tips"`           // Style tips
+	RawResponse   string   `json:"raw_response,omitempty"`
+}
+
+// ColorMatchRequest for color coordination analysis
+type ColorMatchRequest struct {
+	Items []ClothingItemForMatch `json:"items"` // items to analyze
+}
+
+// ColorMatchResponse returns color compatibility analysis
+type ColorMatchResponse struct {
+	CompatibilityScore int      `json:"compatibility_score"` // 0-100
+	Analysis           string   `json:"analysis"`            // Why colors work/don't work
+	Suggestions        []string `json:"suggestions"`         // How to improve
+	RawResponse        string   `json:"raw_response,omitempty"`
+}
+
+// StyleMatchRequest for finding matching items
+type StyleMatchRequest struct {
+	BaseItem ClothingItemForMatch   `json:"base_item"`      // item to match with
+	Items    []ClothingItemForMatch `json:"items"`          // available items
+	MaxItems int                    `json:"max_items"`      // max items to return (default 5)
+}
+
+// StyleMatchResponse returns matching items
+type StyleMatchResponse struct {
+	MatchingItems []MatchedItem `json:"matching_items"`
+	RawResponse   string        `json:"raw_response,omitempty"`
+}
+
+type MatchedItem struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Reason   string `json:"reason"` // Why it matches
+	Score    int    `json:"score"`  // 0-100 match score
+}
+
+// RateOutfitRequest for outfit feedback
+type RateOutfitRequest struct {
+	Items []ClothingItemForMatch `json:"items"` // items in outfit
+}
+
+// RateOutfitResponse returns outfit rating and feedback
+type RateOutfitResponse struct {
+	Rating      int      `json:"rating"`      // 0-10
+	Feedback    string   `json:"feedback"`    // Overall feedback
+	Strengths   []string `json:"strengths"`   // What works well
+	Improvements []string `json:"improvements"` // What could be better
+	RawResponse string   `json:"raw_response,omitempty"`
+}
+
+// WardrobeGapsRequest for analyzing wardrobe
+type WardrobeGapsRequest struct {
+	Items []ClothingItemForMatch `json:"items"` // all wardrobe items
+}
+
+// WardrobeGapsResponse returns wardrobe analysis
+type WardrobeGapsResponse struct {
+	Summary      string   `json:"summary"`       // Overall wardrobe assessment
+	MissingItems []string `json:"missing_items"` // Suggested items to buy
+	Strengths    []string `json:"strengths"`     // What you have well covered
+	Tips         []string `json:"tips"`          // General wardrobe tips
+	RawResponse  string   `json:"raw_response,omitempty"`
+}
+
+// ClothingItemForMatch simplified item info for AI matching
+type ClothingItemForMatch struct {
+	ID       int      `json:"id"`
+	Name     string   `json:"name"`
+	Category string   `json:"category"`
+	Color    string   `json:"color"`
+	Brand    string   `json:"brand,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+}
+
 // DressRequest for AI-assisted clothing placement
 type DressRequest struct {
 	BodyImage     string                 `json:"body_image"`     // base64 body/mannequin image
@@ -117,6 +215,12 @@ func main() {
 	mux.HandleFunc("POST /api/analyze", handleAnalyze)
 	mux.HandleFunc("POST /api/tags", handleTags)
 	mux.HandleFunc("POST /api/dress", handleDress)
+	mux.HandleFunc("POST /api/remove-bg", handleRemoveBg)
+	mux.HandleFunc("POST /api/suggest-outfit", handleSuggestOutfit)
+	mux.HandleFunc("POST /api/color-match", handleColorMatch)
+	mux.HandleFunc("POST /api/style-match", handleStyleMatch)
+	mux.HandleFunc("POST /api/rate-outfit", handleRateOutfit)
+	mux.HandleFunc("POST /api/wardrobe-gaps", handleWardrobeGaps)
 	mux.HandleFunc("GET /api/status", handleStatus)
 
 	// Wrap with CORS middleware
@@ -128,6 +232,7 @@ func main() {
 	log.Printf("🤖 Ollama URL: %s", ollamaURL)
 	log.Printf("👁️  Vision model: %s", visionModel)
 	log.Printf("📝 Text model: %s", textModel)
+	log.Printf("🖼️  Rembg URL: %s", rembgURL)
 	log.Printf("")
 	log.Printf("Open http://localhost:%s/upload.html to test AI features", port)
 
@@ -183,14 +288,23 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	hasVision := contains(models, visionModel)
 	hasText := contains(models, textModel)
 
+	// Check if rembg is available
+	rembgAvailable := false
+	if resp, err := http.Get(rembgURL); err == nil {
+		resp.Body.Close()
+		rembgAvailable = resp.StatusCode == http.StatusOK
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"ollama_url":         ollamaURL,
 		"vision_model":       visionModel,
 		"text_model":         textModel,
+		"rembg_url":          rembgURL,
 		"available_models":   models,
 		"vision_model_ready": hasVision,
 		"text_model_ready":   hasText,
+		"rembg_available":    rembgAvailable,
 		"ready":              hasVision,
 	})
 }
@@ -589,4 +703,657 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func handleRemoveBg(w http.ResponseWriter, r *http.Request) {
+	var req RemoveBgRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+		return
+	}
+
+	if req.Image == "" {
+		writeError(w, http.StatusBadRequest, "Image is required")
+		return
+	}
+
+	// Strip data URI prefix if present
+	imageData := req.Image
+	if idx := strings.Index(imageData, ","); idx != -1 {
+		imageData = imageData[idx+1:]
+	}
+
+	// Decode base64 to raw bytes
+	imgBytes, err := base64.StdEncoding.DecodeString(imageData)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid base64 image data")
+		return
+	}
+
+	log.Printf("Removing background from image (%d bytes)...", len(imgBytes))
+	start := time.Now()
+
+	// Call rembg service
+	resp, err := http.Post(rembgURL+"/api/remove", "application/octet-stream", bytes.NewReader(imgBytes))
+	if err != nil {
+		log.Printf("ERROR: rembg request failed: %v", err)
+		writeError(w, http.StatusServiceUnavailable, "Background removal service not available: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("ERROR: rembg returned status %d: %s", resp.StatusCode, string(body))
+		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("Background removal failed (status %d)", resp.StatusCode))
+		return
+	}
+
+	// Read the processed image
+	processedBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("ERROR: Failed to read rembg response: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to read processed image")
+		return
+	}
+
+	log.Printf("Background removed in %v (%d bytes -> %d bytes)", time.Since(start), len(imgBytes), len(processedBytes))
+
+	// Encode back to base64
+	processedBase64 := base64.StdEncoding.EncodeToString(processedBytes)
+
+	// Return with data URI prefix for PNG (rembg returns PNG with transparency)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(RemoveBgResponse{
+		Image: "data:image/png;base64," + processedBase64,
+	})
+}
+
+func handleSuggestOutfit(w http.ResponseWriter, r *http.Request) {
+	var req SuggestOutfitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+		return
+	}
+
+	if len(req.Items) == 0 {
+		writeError(w, http.StatusBadRequest, "At least one item required")
+		return
+	}
+
+	// Build item list for AI
+	itemsList := ""
+	for _, item := range req.Items {
+		tags := ""
+		if len(item.Tags) > 0 {
+			tags = " [" + strings.Join(item.Tags, ", ") + "]"
+		}
+		itemsList += fmt.Sprintf("- ID %d: %s (%s, %s)%s\n", item.ID, item.Name, item.Category, item.Color, tags)
+	}
+
+	prompt := fmt.Sprintf(`You are a professional fashion stylist. Create an outfit from these wardrobe items:
+
+%s
+Occasion: %s
+Weather: %s
+
+Select 3-5 items that work well together for this occasion and weather. Consider:
+- Appropriate layering for the weather
+- Color coordination
+- Style cohesion
+- Occasion appropriateness
+
+Respond ONLY with JSON:
+{
+  "selected_items": [1, 5, 7],
+  "reasoning": "Why these items work together",
+  "tips": ["Style tip 1", "Style tip 2"]
+}`, itemsList, req.Occasion, req.Weather)
+
+	log.Printf("Suggesting outfit for %s / %s with %d items", req.Occasion, req.Weather, len(req.Items))
+	start := time.Now()
+
+	ollamaReq := OllamaRequest{
+		Model:  textModel,
+		Prompt: prompt,
+		Stream: false,
+	}
+
+	reqBody, _ := json.Marshal(ollamaReq)
+	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		log.Printf("ERROR: Ollama request failed: %v", err)
+		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	var ollamaResp OllamaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		log.Printf("ERROR: Failed to parse Ollama response: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
+		return
+	}
+
+	log.Printf("Outfit suggestion time: %v", time.Since(start))
+
+	result := parseSuggestOutfitResponse(ollamaResp.Response)
+	result.RawResponse = ollamaResp.Response
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleColorMatch(w http.ResponseWriter, r *http.Request) {
+	var req ColorMatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+		return
+	}
+
+	if len(req.Items) < 2 {
+		writeError(w, http.StatusBadRequest, "At least 2 items required for color matching")
+		return
+	}
+
+	itemsList := ""
+	for i, item := range req.Items {
+		itemsList += fmt.Sprintf("%d. %s: %s color\n", i+1, item.Name, item.Color)
+	}
+
+	prompt := fmt.Sprintf(`Analyze the color coordination of these clothing items:
+
+%s
+
+Rate the color compatibility from 0-100 and explain:
+- Do these colors work well together?
+- Any color clashes?
+- Suggestions to improve the color scheme?
+
+Respond ONLY with JSON:
+{
+  "compatibility_score": 85,
+  "analysis": "Brief analysis of color coordination",
+  "suggestions": ["Suggestion 1", "Suggestion 2"]
+}`, itemsList)
+
+	log.Printf("Analyzing color match for %d items", len(req.Items))
+	start := time.Now()
+
+	ollamaReq := OllamaRequest{
+		Model:  textModel,
+		Prompt: prompt,
+		Stream: false,
+	}
+
+	reqBody, _ := json.Marshal(ollamaReq)
+	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	var ollamaResp OllamaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
+		return
+	}
+
+	log.Printf("Color match analysis time: %v", time.Since(start))
+
+	result := parseColorMatchResponse(ollamaResp.Response)
+	result.RawResponse = ollamaResp.Response
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleStyleMatch(w http.ResponseWriter, r *http.Request) {
+	var req StyleMatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+		return
+	}
+
+	if req.BaseItem.ID == 0 {
+		writeError(w, http.StatusBadRequest, "Base item required")
+		return
+	}
+
+	if len(req.Items) == 0 {
+		writeError(w, http.StatusBadRequest, "Items to match required")
+		return
+	}
+
+	maxItems := req.MaxItems
+	if maxItems == 0 {
+		maxItems = 5
+	}
+
+	baseTags := strings.Join(req.BaseItem.Tags, ", ")
+	itemsList := ""
+	for _, item := range req.Items {
+		tags := strings.Join(item.Tags, ", ")
+		itemsList += fmt.Sprintf("- ID %d: %s (%s, %s) [%s]\n", item.ID, item.Name, item.Category, item.Color, tags)
+	}
+
+	prompt := fmt.Sprintf(`I have this clothing item:
+%s (%s, %s) [%s]
+
+Find the top %d items from this wardrobe that would match well:
+%s
+
+Consider:
+- Color coordination
+- Style compatibility (tags/aesthetics)
+- Formality level
+- Seasonal appropriateness
+
+For each matching item, give a score (0-100) and explain why it matches.
+
+Respond ONLY with JSON:
+{
+  "matching_items": [
+    {"id": 5, "name": "Item name", "reason": "Why it matches", "score": 85},
+    {"id": 7, "name": "Item name", "reason": "Why it matches", "score": 78}
+  ]
+}`, req.BaseItem.Name, req.BaseItem.Category, req.BaseItem.Color, baseTags, maxItems, itemsList)
+
+	log.Printf("Finding style matches for item %d", req.BaseItem.ID)
+	start := time.Now()
+
+	ollamaReq := OllamaRequest{
+		Model:  textModel,
+		Prompt: prompt,
+		Stream: false,
+	}
+
+	reqBody, _ := json.Marshal(ollamaReq)
+	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	var ollamaResp OllamaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
+		return
+	}
+
+	log.Printf("Style match time: %v", time.Since(start))
+
+	result := parseStyleMatchResponse(ollamaResp.Response)
+	result.RawResponse = ollamaResp.Response
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleRateOutfit(w http.ResponseWriter, r *http.Request) {
+	var req RateOutfitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+		return
+	}
+
+	if len(req.Items) == 0 {
+		writeError(w, http.StatusBadRequest, "At least one item required")
+		return
+	}
+
+	itemsList := ""
+	for _, item := range req.Items {
+		tags := strings.Join(item.Tags, ", ")
+		itemsList += fmt.Sprintf("- %s (%s, %s) [%s]\n", item.Name, item.Category, item.Color, tags)
+	}
+
+	prompt := fmt.Sprintf(`Rate this outfit from 0-10 and provide constructive feedback:
+
+%s
+
+Consider:
+- Color harmony
+- Style cohesion
+- Appropriate layering
+- Balance and proportions
+
+Respond ONLY with JSON:
+{
+  "rating": 8,
+  "feedback": "Overall assessment in 1-2 sentences",
+  "strengths": ["What works well", "Another strength"],
+  "improvements": ["How to improve", "Another suggestion"]
+}`, itemsList)
+
+	log.Printf("Rating outfit with %d items", len(req.Items))
+	start := time.Now()
+
+	ollamaReq := OllamaRequest{
+		Model:  textModel,
+		Prompt: prompt,
+		Stream: false,
+	}
+
+	reqBody, _ := json.Marshal(ollamaReq)
+	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	var ollamaResp OllamaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
+		return
+	}
+
+	log.Printf("Outfit rating time: %v", time.Since(start))
+
+	result := parseRateOutfitResponse(ollamaResp.Response)
+	result.RawResponse = ollamaResp.Response
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleWardrobeGaps(w http.ResponseWriter, r *http.Request) {
+	var req WardrobeGapsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+		return
+	}
+
+	if len(req.Items) == 0 {
+		writeError(w, http.StatusBadRequest, "At least one item required")
+		return
+	}
+
+	// Group items by category
+	categoryCount := make(map[string]int)
+	colorCount := make(map[string]int)
+	itemsList := ""
+
+	for _, item := range req.Items {
+		categoryCount[item.Category]++
+		colorCount[item.Color]++
+		tags := strings.Join(item.Tags, ", ")
+		itemsList += fmt.Sprintf("- %s (%s, %s) [%s]\n", item.Name, item.Category, item.Color, tags)
+	}
+
+	categorySummary := ""
+	for cat, count := range categoryCount {
+		categorySummary += fmt.Sprintf("- %s: %d items\n", cat, count)
+	}
+
+	prompt := fmt.Sprintf(`Analyze this wardrobe and identify gaps or missing essentials:
+
+Total items: %d
+
+By category:
+%s
+
+All items:
+%s
+
+Provide:
+1. Overall assessment of wardrobe versatility
+2. Missing essential items that would increase outfit options
+3. What's well-covered
+4. General wardrobe building tips
+
+Respond ONLY with JSON:
+{
+  "summary": "Overall wardrobe assessment in 2-3 sentences",
+  "missing_items": ["Essential item 1", "Essential item 2", "Versatile piece 3"],
+  "strengths": ["What's well covered", "Another strength"],
+  "tips": ["Wardrobe tip 1", "Wardrobe tip 2"]
+}`, len(req.Items), categorySummary, itemsList)
+
+	log.Printf("Analyzing wardrobe gaps for %d items", len(req.Items))
+	start := time.Now()
+
+	ollamaReq := OllamaRequest{
+		Model:  textModel,
+		Prompt: prompt,
+		Stream: false,
+	}
+
+	reqBody, _ := json.Marshal(ollamaReq)
+	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	var ollamaResp OllamaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
+		return
+	}
+
+	log.Printf("Wardrobe gaps analysis time: %v", time.Since(start))
+
+	result := parseWardrobeGapsResponse(ollamaResp.Response)
+	result.RawResponse = ollamaResp.Response
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// Parsing functions for AI responses
+
+func parseSuggestOutfitResponse(response string) SuggestOutfitResponse {
+	result := SuggestOutfitResponse{
+		SelectedItems: []int{},
+		Reasoning:     "No outfit suggested",
+		Tips:          []string{},
+	}
+
+	response = strings.TrimSpace(response)
+	response = strings.TrimPrefix(response, "```json")
+	response = strings.TrimPrefix(response, "```")
+	response = strings.TrimSuffix(response, "```")
+	response = strings.TrimSpace(response)
+
+	start := strings.Index(response, "{")
+	end := strings.LastIndex(response, "}")
+
+	if start == -1 || end == -1 {
+		return result
+	}
+
+	jsonStr := response[start : end+1]
+
+	var parsed struct {
+		SelectedItems []int    `json:"selected_items"`
+		Reasoning     string   `json:"reasoning"`
+		Tips          []string `json:"tips"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil {
+		result.SelectedItems = parsed.SelectedItems
+		if parsed.Reasoning != "" {
+			result.Reasoning = parsed.Reasoning
+		}
+		if len(parsed.Tips) > 0 {
+			result.Tips = parsed.Tips
+		}
+	}
+
+	return result
+}
+
+func parseColorMatchResponse(response string) ColorMatchResponse {
+	result := ColorMatchResponse{
+		CompatibilityScore: 50,
+		Analysis:           "Unable to analyze colors",
+		Suggestions:        []string{},
+	}
+
+	response = strings.TrimSpace(response)
+	response = strings.TrimPrefix(response, "```json")
+	response = strings.TrimPrefix(response, "```")
+	response = strings.TrimSuffix(response, "```")
+	response = strings.TrimSpace(response)
+
+	start := strings.Index(response, "{")
+	end := strings.LastIndex(response, "}")
+
+	if start == -1 || end == -1 {
+		return result
+	}
+
+	jsonStr := response[start : end+1]
+
+	var parsed struct {
+		CompatibilityScore int      `json:"compatibility_score"`
+		Analysis           string   `json:"analysis"`
+		Suggestions        []string `json:"suggestions"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil {
+		if parsed.CompatibilityScore > 0 {
+			result.CompatibilityScore = parsed.CompatibilityScore
+		}
+		if parsed.Analysis != "" {
+			result.Analysis = parsed.Analysis
+		}
+		if len(parsed.Suggestions) > 0 {
+			result.Suggestions = parsed.Suggestions
+		}
+	}
+
+	return result
+}
+
+func parseStyleMatchResponse(response string) StyleMatchResponse {
+	result := StyleMatchResponse{
+		MatchingItems: []MatchedItem{},
+	}
+
+	response = strings.TrimSpace(response)
+	response = strings.TrimPrefix(response, "```json")
+	response = strings.TrimPrefix(response, "```")
+	response = strings.TrimSuffix(response, "```")
+	response = strings.TrimSpace(response)
+
+	start := strings.Index(response, "{")
+	end := strings.LastIndex(response, "}")
+
+	if start == -1 || end == -1 {
+		return result
+	}
+
+	jsonStr := response[start : end+1]
+
+	var parsed struct {
+		MatchingItems []MatchedItem `json:"matching_items"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil {
+		result.MatchingItems = parsed.MatchingItems
+	}
+
+	return result
+}
+
+func parseRateOutfitResponse(response string) RateOutfitResponse {
+	result := RateOutfitResponse{
+		Rating:       5,
+		Feedback:     "Unable to rate outfit",
+		Strengths:    []string{},
+		Improvements: []string{},
+	}
+
+	response = strings.TrimSpace(response)
+	response = strings.TrimPrefix(response, "```json")
+	response = strings.TrimPrefix(response, "```")
+	response = strings.TrimSuffix(response, "```")
+	response = strings.TrimSpace(response)
+
+	start := strings.Index(response, "{")
+	end := strings.LastIndex(response, "}")
+
+	if start == -1 || end == -1 {
+		return result
+	}
+
+	jsonStr := response[start : end+1]
+
+	var parsed struct {
+		Rating       int      `json:"rating"`
+		Feedback     string   `json:"feedback"`
+		Strengths    []string `json:"strengths"`
+		Improvements []string `json:"improvements"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil {
+		if parsed.Rating > 0 {
+			result.Rating = parsed.Rating
+		}
+		if parsed.Feedback != "" {
+			result.Feedback = parsed.Feedback
+		}
+		if len(parsed.Strengths) > 0 {
+			result.Strengths = parsed.Strengths
+		}
+		if len(parsed.Improvements) > 0 {
+			result.Improvements = parsed.Improvements
+		}
+	}
+
+	return result
+}
+
+func parseWardrobeGapsResponse(response string) WardrobeGapsResponse {
+	result := WardrobeGapsResponse{
+		Summary:      "Unable to analyze wardrobe",
+		MissingItems: []string{},
+		Strengths:    []string{},
+		Tips:         []string{},
+	}
+
+	response = strings.TrimSpace(response)
+	response = strings.TrimPrefix(response, "```json")
+	response = strings.TrimPrefix(response, "```")
+	response = strings.TrimSuffix(response, "```")
+	response = strings.TrimSpace(response)
+
+	start := strings.Index(response, "{")
+	end := strings.LastIndex(response, "}")
+
+	if start == -1 || end == -1 {
+		return result
+	}
+
+	jsonStr := response[start : end+1]
+
+	var parsed struct {
+		Summary      string   `json:"summary"`
+		MissingItems []string `json:"missing_items"`
+		Strengths    []string `json:"strengths"`
+		Tips         []string `json:"tips"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil {
+		if parsed.Summary != "" {
+			result.Summary = parsed.Summary
+		}
+		if len(parsed.MissingItems) > 0 {
+			result.MissingItems = parsed.MissingItems
+		}
+		if len(parsed.Strengths) > 0 {
+			result.Strengths = parsed.Strengths
+		}
+		if len(parsed.Tips) > 0 {
+			result.Tips = parsed.Tips
+		}
+	}
+
+	return result
 }

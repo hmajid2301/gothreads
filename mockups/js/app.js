@@ -127,6 +127,141 @@ async function dressWithAI(bodyImage, clothingItems, customPrompt = '') {
   return null;
 }
 
+async function removeBackgroundWithAI(imageDataUrl) {
+  try {
+    const resp = await fetch(`${AI_API_URL}/remove-bg`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imageDataUrl })
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      return data.image;
+    } else {
+      const error = await resp.json();
+      console.error('Background removal error:', error);
+      showToast(`Background removal failed: ${error.error || 'Unknown error'}`, 'error');
+    }
+  } catch (e) {
+    console.error('Background removal failed:', e);
+    showToast('Background removal service not available', 'error');
+  }
+  return null;
+}
+
+async function suggestOutfitWithAI(occasion, weather, items) {
+  if (!aiAvailable) return null;
+
+  try {
+    const resp = await fetch(`${AI_API_URL}/suggest-outfit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ occasion, weather, items })
+    });
+
+    if (resp.ok) {
+      return await resp.json();
+    } else {
+      const error = await resp.json();
+      console.error('Outfit suggestion error:', error);
+      showToast(`AI error: ${error.error || 'Unknown error'}`, 'error');
+    }
+  } catch (e) {
+    console.error('Outfit suggestion failed:', e);
+    showToast('Outfit suggestion failed: ' + e.message, 'error');
+  }
+  return null;
+}
+
+async function analyzeColorMatch(items) {
+  if (!aiAvailable) return null;
+
+  try {
+    const resp = await fetch(`${AI_API_URL}/color-match`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+
+    if (resp.ok) {
+      return await resp.json();
+    } else {
+      const error = await resp.json();
+      console.error('Color match error:', error);
+    }
+  } catch (e) {
+    console.error('Color match failed:', e);
+  }
+  return null;
+}
+
+async function findStyleMatches(baseItem, items, maxItems = 5) {
+  if (!aiAvailable) return null;
+
+  try {
+    const resp = await fetch(`${AI_API_URL}/style-match`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_item: baseItem, items, max_items: maxItems })
+    });
+
+    if (resp.ok) {
+      return await resp.json();
+    } else {
+      const error = await resp.json();
+      console.error('Style match error:', error);
+    }
+  } catch (e) {
+    console.error('Style match failed:', e);
+  }
+  return null;
+}
+
+async function rateOutfitWithAI(items) {
+  if (!aiAvailable) return null;
+
+  try {
+    const resp = await fetch(`${AI_API_URL}/rate-outfit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+
+    if (resp.ok) {
+      return await resp.json();
+    } else {
+      const error = await resp.json();
+      console.error('Outfit rating error:', error);
+    }
+  } catch (e) {
+    console.error('Outfit rating failed:', e);
+  }
+  return null;
+}
+
+async function analyzeWardrobeGaps(items) {
+  if (!aiAvailable) return null;
+
+  try {
+    const resp = await fetch(`${AI_API_URL}/wardrobe-gaps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+
+    if (resp.ok) {
+      return await resp.json();
+    } else {
+      const error = await resp.json();
+      console.error('Wardrobe gaps error:', error);
+    }
+  } catch (e) {
+    console.error('Wardrobe gaps analysis failed:', e);
+  }
+  return null;
+}
+
 // ============================================================================
 // DATA STORE (Mock localStorage persistence)
 // ============================================================================
@@ -176,6 +311,15 @@ function getData() {
 
 function saveData(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function clearAllData() {
+  localStorage.removeItem(STORAGE_KEY);
+  closeModal();
+  showToast('All data cleared successfully!', 'success');
+  setTimeout(() => {
+    window.location.reload();
+  }, 1000);
 }
 
 // Global state
@@ -250,6 +394,20 @@ function initUpload() {
 
   if (!uploadArea || !uploadInput) return;
 
+  // Clear database button
+  const clearDbBtn = document.getElementById('clear-db-btn');
+  if (clearDbBtn) {
+    clearDbBtn.onclick = () => {
+      showModal('Clear All Data?', `
+        <p>This will permanently delete all clothing items and outfits from your wardrobe.</p>
+        <p style="color: #E74C3C; font-weight: bold;">This action cannot be undone!</p>
+      `, [
+        { label: 'Cancel', onclick: 'closeModal()' },
+        { label: 'Clear All Data', primary: true, onclick: 'clearAllData()' }
+      ]);
+    };
+  }
+
   // Drag and drop
   uploadArea.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -265,82 +423,163 @@ function initUpload() {
     uploadArea.classList.remove('drag-over');
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      handleFileUpload(files[0]);
+      handleMultipleFileUploads(files);
     }
   });
 
   // File input
   uploadInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
-      handleFileUpload(e.target.files[0]);
+      handleMultipleFileUploads(e.target.files);
     }
   });
 }
 
-async function handleFileUpload(file) {
+async function handleMultipleFileUploads(files) {
+  const fileArray = Array.from(files);
+
+  if (fileArray.length === 0) return;
+
+  // Show modal with progress
+  showBatchUploadModal(fileArray.length);
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < fileArray.length; i++) {
+    const file = fileArray[i];
+    updateBatchUploadProgress(i + 1, fileArray.length, file.name);
+
+    const result = await handleSingleFileUpload(file, false); // Don't redirect
+    if (result) {
+      successCount++;
+    } else {
+      failCount++;
+    }
+  }
+
+  closeModal();
+
+  if (successCount > 0) {
+    showToast(`Successfully uploaded ${successCount} item${successCount > 1 ? 's' : ''}! Review them below.`, 'success');
+    setTimeout(() => {
+      window.location.href = 'wardrobe.html?recent=true';
+    }, 1500);
+  }
+
+  if (failCount > 0) {
+    showToast(`Failed to upload ${failCount} item${failCount > 1 ? 's' : ''}`, 'error');
+  }
+}
+
+function showBatchUploadModal(totalCount) {
+  showModal('Uploading Items', `
+    <div style="text-align: center; padding: 2rem;">
+      <div class="spinner"></div>
+      <p id="batch-upload-status" style="margin-top: 1rem; color: var(--text-neutral);">
+        Processing 0 of ${totalCount} items...
+      </p>
+      <p id="batch-upload-file" style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-neutral);"></p>
+      <div class="progress-bar" style="margin-top: 1rem;">
+        <div class="progress-fill" id="batch-upload-progress" style="width: 0%"></div>
+      </div>
+    </div>
+  `, []);
+}
+
+function updateBatchUploadProgress(current, total, filename) {
+  const statusEl = document.getElementById('batch-upload-status');
+  const fileEl = document.getElementById('batch-upload-file');
+  const progressEl = document.getElementById('batch-upload-progress');
+
+  if (statusEl) statusEl.textContent = `Processing ${current} of ${total} items...`;
+  if (fileEl) fileEl.textContent = filename;
+  if (progressEl) progressEl.style.width = `${(current / total) * 100}%`;
+}
+
+async function handleSingleFileUpload(file, shouldRedirect = true) {
   // Validate file type
   const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
   if (!validTypes.includes(file.type)) {
     showToast('Please upload a JPEG, PNG, WebP, or AVIF image', 'error');
-    return;
+    return false;
   }
 
   // Validate file size (10MB)
   if (file.size > 10 * 1024 * 1024) {
     showToast('File too large. Maximum size is 10MB', 'error');
-    return;
+    return false;
   }
 
-  // Show processing state
-  showProcessingModal(aiAvailable ? 'Analyzing with AI...' : 'Processing...');
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+      let imageData = e.target.result;
 
-  const reader = new FileReader();
-  reader.onload = async function(e) {
-    let imageData = e.target.result;
+      try {
+        // Remove background first (always)
+        updateProcessingStatus('Removing background...');
+        const bgRemovedImage = await removeBackgroundWithAI(imageData);
+        if (bgRemovedImage) {
+          imageData = bgRemovedImage;
+          console.log('Background removed successfully');
+        } else {
+          console.log('Background removal failed, using original image');
+        }
 
-    // Try AI analysis if available
-    let aiResult = null;
-    if (aiAvailable) {
-      updateProcessingStatus('Analyzing clothing with AI...');
-      aiResult = await analyzeImageWithAI(imageData);
-      if (aiResult) {
-        console.log('AI Analysis Result:', aiResult);
+        // Try AI analysis if available
+        let aiResult = null;
+        if (aiAvailable) {
+          updateProcessingStatus('Analyzing clothing with AI...');
+          aiResult = await analyzeImageWithAI(imageData);
+          if (aiResult) {
+            console.log('AI Analysis Result:', aiResult);
+          }
+        }
+
+        const newItem = {
+          id: Date.now() + Math.random(), // Ensure unique IDs for batch uploads
+          name: aiResult?.description?.substring(0, 50) || file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+          category: aiResult?.category || 'Uncategorized',
+          price: 0,
+          color: aiResult?.color || '',
+          brand: aiResult?.brand || '',
+          wearCount: 0,
+          image: imageData,
+          tags: aiResult?.tags || [],
+          aiAnalysis: aiResult?.raw_response || null,
+          uploadedAt: new Date().toISOString(),
+        };
+
+        appData.items.push(newItem);
+        saveData(appData);
+
+        if (shouldRedirect) {
+          closeModal();
+
+          if (aiResult) {
+            const brandText = aiResult.brand ? ` by ${aiResult.brand}` : '';
+            showToast(`AI detected: ${aiResult.color} ${aiResult.category}${brandText}`, 'success');
+          } else {
+            showToast('Item uploaded! Edit details below.', 'success');
+          }
+
+          // Redirect to edit page
+          setTimeout(() => {
+            window.location.href = `item-detail.html?id=${newItem.id}`;
+          }, 1000);
+        }
+
+        resolve(true);
+      } catch (error) {
+        console.error('Upload error:', error);
+        resolve(false);
       }
-    }
-
-    const newItem = {
-      id: Date.now(),
-      name: aiResult?.description?.substring(0, 50) || file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
-      category: aiResult?.category || 'Uncategorized',
-      price: 0,
-      color: aiResult?.color || '',
-      brand: aiResult?.brand || '',
-      wearCount: 0,
-      image: imageData,
-      tags: aiResult?.tags || [],
-      aiAnalysis: aiResult?.raw_response || null,
-      uploadedAt: new Date().toISOString(),
     };
 
-    appData.items.push(newItem);
-    saveData(appData);
-
-    closeModal();
-
-    if (aiResult) {
-      const brandText = aiResult.brand ? ` by ${aiResult.brand}` : '';
-      showToast(`AI detected: ${aiResult.color} ${aiResult.category}${brandText}`, 'success');
-    } else {
-      showToast('Item uploaded! Edit details below.', 'success');
-    }
-
-    // Redirect to edit page
-    setTimeout(() => {
-      window.location.href = `item-detail.html?id=${newItem.id}`;
-    }, 1000);
-  };
-
-  reader.readAsDataURL(file);
+    reader.onerror = () => resolve(false);
+    reader.readAsDataURL(file);
+  });
 }
 
 function showProcessingModal(statusText = 'Uploading and analyzing image...') {
@@ -377,9 +616,18 @@ function renderWardrobe(containerId, filterCategory = 'all') {
   const container = document.getElementById(containerId);
   if (!container) return;
 
+  // Check if we should show recent uploads
+  const urlParams = new URLSearchParams(window.location.search);
+  const showRecent = urlParams.get('recent') === 'true';
+
   let items = appData.items;
   if (filterCategory !== 'all') {
     items = items.filter(item => item.category === filterCategory);
+  }
+
+  // Sort by upload date if showing recent
+  if (showRecent) {
+    items = items.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
   }
 
   container.innerHTML = '';
@@ -394,6 +642,18 @@ function renderWardrobe(containerId, filterCategory = 'all') {
     return;
   }
 
+  // Show banner if recent uploads
+  if (showRecent) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'grid-column: 1/-1; background: var(--warm-bg); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--primary); margin-bottom: 1rem;';
+    banner.innerHTML = `
+      <p style="margin: 0; color: var(--text-neutral);">
+        ✨ Recently uploaded items shown first. Click any item to review and edit AI-detected details.
+      </p>
+    `;
+    container.appendChild(banner);
+  }
+
   items.forEach(item => {
     const card = document.createElement('div');
     card.className = 'item-card';
@@ -401,11 +661,19 @@ function renderWardrobe(containerId, filterCategory = 'all') {
 
     const costPerWear = item.wearCount > 0 ? (item.price / item.wearCount).toFixed(2) : item.price.toFixed(2);
 
+    // Highlight AI-detected info
+    const aiInfo = item.aiAnalysis ? `
+      <div style="font-size: 0.75rem; color: var(--primary); margin-top: 0.25rem;">
+        ✨ ${item.color}${item.brand ? ` • ${item.brand}` : ''}
+      </div>
+    ` : '';
+
     card.innerHTML = `
       <img src="${item.image}" alt="${item.name}" class="item-image" loading="lazy">
       <div class="item-info">
         <div class="item-name">${item.name}</div>
         <div class="item-meta">${item.category} • $${item.price.toFixed(2)}</div>
+        ${aiInfo}
         <div class="item-stats">
           <span title="Times worn">👔 ${item.wearCount}</span>
           <span title="Cost per wear">💰 $${costPerWear}</span>
@@ -435,6 +703,10 @@ function initOutfitBuilder() {
   const picker = document.getElementById('item-picker');
 
   if (!canvas || !picker) return;
+
+  // Auto-load default mannequin on page load
+  window.mannequinAutoLoaded = true;
+  useDefaultMannequin();
 
   // Render item picker with category tabs
   renderItemPicker(picker);
@@ -480,6 +752,31 @@ function initOutfitBuilder() {
   if (dressBtn) {
     dressBtn.onclick = handleDressWithAI;
   }
+
+  // Rate Outfit button
+  const rateBtn = document.getElementById('rate-outfit-btn');
+  if (rateBtn) {
+    rateBtn.onclick = handleRateOutfit;
+  }
+
+  // Check if outfit was suggested from AI Stylist
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('suggested') === 'true') {
+    const suggestedItems = JSON.parse(sessionStorage.getItem('suggested_outfit_items') || '[]');
+    if (suggestedItems.length > 0) {
+      // Auto-add suggested items to canvas
+      setTimeout(() => {
+        suggestedItems.forEach(itemId => {
+          const item = appData.items.find(i => i.id === itemId);
+          if (item) {
+            addToCanvas(item.id);
+          }
+        });
+        sessionStorage.removeItem('suggested_outfit_items');
+        showToast('AI-suggested items added! Click "Dress with AI" to position them.', 'success');
+      }, 500);
+    }
+  }
 }
 
 function handleBodyUpload(file) {
@@ -500,6 +797,56 @@ function handleBodyUpload(file) {
   reader.readAsDataURL(file);
 }
 
+function useDefaultMannequin() {
+  // Create a simple SVG mannequin as data URL
+  const mannequinSVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 500" width="200" height="500">
+  <!-- Head -->
+  <ellipse cx="100" cy="40" rx="25" ry="30" fill="#E8DDD3" stroke="#C4B5A0" stroke-width="2"/>
+
+  <!-- Neck -->
+  <rect x="90" y="65" width="20" height="15" fill="#E8DDD3" stroke="#C4B5A0" stroke-width="1"/>
+
+  <!-- Shoulders and Torso -->
+  <path d="M 60 80 L 60 240 L 140 240 L 140 80 Z" fill="#F5F0E8" stroke="#C4B5A0" stroke-width="2"/>
+  <line x1="60" y1="80" x2="30" y2="100" stroke="#C4B5A0" stroke-width="2"/>
+  <line x1="140" y1="80" x2="170" y2="100" stroke="#C4B5A0" stroke-width="2"/>
+
+  <!-- Arms -->
+  <rect x="25" y="100" width="12" height="140" fill="#E8DDD3" stroke="#C4B5A0" stroke-width="2" rx="6"/>
+  <rect x="163" y="100" width="12" height="140" fill="#E8DDD3" stroke="#C4B5A0" stroke-width="2" rx="6"/>
+
+  <!-- Waist line -->
+  <line x1="60" y1="180" x2="140" y2="180" stroke="#C4B5A0" stroke-width="1" stroke-dasharray="5,5"/>
+
+  <!-- Hips/Legs -->
+  <path d="M 70 240 L 65 380 L 85 380 L 85 240 Z" fill="#E8DDD3" stroke="#C4B5A0" stroke-width="2"/>
+  <path d="M 130 240 L 135 380 L 115 380 L 115 240 Z" fill="#E8DDD3" stroke="#C4B5A0" stroke-width="2"/>
+
+  <!-- Feet base -->
+  <ellipse cx="75" cy="385" rx="15" ry="8" fill="#C4B5A0" opacity="0.3"/>
+  <ellipse cx="125" cy="385" rx="15" ry="8" fill="#C4B5A0" opacity="0.3"/>
+
+  <!-- Guidelines -->
+  <text x="100" y="20" text-anchor="middle" font-size="12" fill="#999" font-family="Arial">Mannequin</text>
+</svg>
+  `.trim();
+
+  const canvas = document.querySelector('.outfit-canvas');
+  if (canvas) {
+    const dataUrl = 'data:image/svg+xml;base64,' + btoa(mannequinSVG);
+    canvas.style.backgroundImage = `url(${dataUrl})`;
+    canvas.style.backgroundSize = 'contain';
+    canvas.style.backgroundPosition = 'center';
+    canvas.style.backgroundRepeat = 'no-repeat';
+
+    // Only show toast if manually clicked (not auto-load)
+    if (window.mannequinAutoLoaded !== true) {
+      showToast('Mannequin reset! Add items and try "Dress with AI"!', 'success');
+    }
+  }
+}
+
 function removeBodyBackground() {
   const canvas = document.querySelector('.outfit-canvas');
   if (canvas) {
@@ -512,10 +859,20 @@ function clearCanvas() {
   const canvas = document.querySelector('.outfit-canvas');
   if (canvas) {
     currentOutfitItems = [];
-    canvas.innerHTML = '';
-    canvas.style.backgroundImage = 'none';
+    canvas.innerHTML = `
+      <div id="canvas-placeholder" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--text-neutral); pointer-events: none;">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">👕</div>
+        <p style="margin: 0;">Click items from the right to add →</p>
+        <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Then click "✨ Dress with AI" to position them</p>
+      </div>
+    `;
+
+    // Reset mannequin
+    window.mannequinAutoLoaded = true;
+    useDefaultMannequin();
+
     renderPickerItems(document.querySelector('.picker-tab.active')?.dataset.category || 'all');
-    showToast('Canvas cleared', 'info');
+    showToast('Canvas cleared and mannequin reset', 'info');
   }
 }
 
@@ -627,6 +984,12 @@ function addToCanvas(item) {
 
   canvas.appendChild(canvasItem);
   currentOutfitItems.push({ ...item, x, y, z });
+
+  // Hide placeholder when first item is added
+  const placeholder = document.getElementById('canvas-placeholder');
+  if (placeholder) {
+    placeholder.style.display = 'none';
+  }
 
   // Update picker
   renderPickerItems(document.querySelector('.picker-tab.active')?.dataset.category || 'all');
@@ -830,6 +1193,73 @@ async function handleDressWithAI() {
   }
 }
 
+async function handleRateOutfit() {
+  if (!aiAvailable) {
+    showToast('AI not available. Start the API server.', 'error');
+    return;
+  }
+
+  if (currentOutfitItems.length === 0) {
+    showToast('Add items to your outfit first!', 'error');
+    return;
+  }
+
+  // Prepare items for rating
+  const items = currentOutfitItems.map(item => ({
+    id: item.id,
+    name: item.name,
+    category: item.category,
+    color: item.color,
+    tags: item.tags || []
+  }));
+
+  showProcessingModal('AI is rating your outfit...');
+
+  try {
+    const result = await rateOutfitWithAI(items);
+
+    if (result) {
+      closeModal();
+
+      const ratingStars = '⭐'.repeat(Math.round(result.rating / 2));
+      const strengthsList = result.strengths && result.strengths.length > 0 ?
+        `<ul>${result.strengths.map(s => `<li>${s}</li>`).join('')}</ul>` : '';
+      const improvementsList = result.improvements && result.improvements.length > 0 ?
+        `<ul>${result.improvements.map(i => `<li>${i}</li>`).join('')}</ul>` : '';
+
+      showModal('⭐ Outfit Rating', `
+        <div style="text-align: center; margin: 1.5rem 0;">
+          <div style="font-size: 3rem;">${ratingStars}</div>
+          <div style="font-size: 2rem; font-weight: bold; color: var(--primary);">${result.rating}/10</div>
+        </div>
+        <div style="padding: 1rem; background: var(--warm-bg); border-radius: 0.5rem; margin-bottom: 1rem;">
+          <p style="margin: 0; color: var(--text-neutral);">${result.feedback}</p>
+        </div>
+        ${result.strengths && result.strengths.length > 0 ? `
+          <div style="margin-bottom: 1rem;">
+            <strong style="color: #27AE60;">✅ Strengths:</strong>
+            ${strengthsList}
+          </div>
+        ` : ''}
+        ${result.improvements && result.improvements.length > 0 ? `
+          <div>
+            <strong style="color: var(--primary);">💡 How to Improve:</strong>
+            ${improvementsList}
+          </div>
+        ` : ''}
+      `, [
+        { label: 'Close', onclick: 'closeModal()' }
+      ]);
+    } else {
+      closeModal();
+      showToast('AI could not rate outfit', 'error');
+    }
+  } catch (e) {
+    closeModal();
+    showToast('Outfit rating failed: ' + e.message, 'error');
+  }
+}
+
 function saveOutfit() {
   if (currentOutfitItems.length === 0) {
     showToast('Add items to your outfit first!', 'error');
@@ -1013,6 +1443,102 @@ function initItemDetail() {
   if (wearBtn) {
     wearBtn.onclick = () => logWear(itemId);
   }
+
+  // Find Matching Items button
+  const findMatchesBtn = document.getElementById('find-matches-btn');
+  if (findMatchesBtn) {
+    findMatchesBtn.onclick = async () => {
+      if (!aiAvailable) {
+        showToast('AI not available. Start the API server.', 'error');
+        return;
+      }
+
+      const item = appData.items.find(i => i.id === itemId);
+      if (!item) return;
+
+      const baseItem = {
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        color: item.color,
+        brand: item.brand,
+        tags: item.tags || []
+      };
+
+      const otherItems = appData.items
+        .filter(i => i.id !== itemId)
+        .map(i => ({
+          id: i.id,
+          name: i.name,
+          category: i.category,
+          color: i.color,
+          brand: i.brand,
+          tags: i.tags || []
+        }));
+
+      if (otherItems.length === 0) {
+        showToast('No other items in wardrobe to match with!', 'error');
+        return;
+      }
+
+      findMatchesBtn.disabled = true;
+      findMatchesBtn.textContent = '⏳ Finding matches...';
+
+      const result = await findStyleMatches(baseItem, otherItems, 6);
+
+      findMatchesBtn.disabled = false;
+      findMatchesBtn.textContent = '✨ Find Matching Items';
+
+      if (result && result.matching_items && result.matching_items.length > 0) {
+        displayStyleMatches(result.matching_items);
+      } else {
+        showToast('Could not find matching items', 'error');
+      }
+    };
+  }
+}
+
+function displayStyleMatches(matchingItems) {
+  const section = document.getElementById('style-matches-section');
+  const grid = document.getElementById('style-matches-grid');
+
+  if (!section || !grid) return;
+
+  grid.innerHTML = '';
+
+  matchingItems.forEach(match => {
+    const item = appData.items.find(i => i.id === match.id);
+    if (!item) return;
+
+    const card = document.createElement('div');
+    card.className = 'item-card';
+    card.onclick = () => window.location.href = `item-detail.html?id=${item.id}`;
+
+    const scoreColor = match.score >= 80 ? '#27AE60' :
+                       match.score >= 60 ? '#F39C12' : '#E74C3C';
+
+    card.innerHTML = `
+      <img src="${item.image}" alt="${item.name}" class="item-image" loading="lazy">
+      <div class="item-info">
+        <div class="item-name">${item.name}</div>
+        <div class="item-meta">${item.category} • ${item.color}</div>
+        <div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--warm-bg); border-radius: 0.25rem;">
+          <div style="font-size: 0.75rem; color: var(--text-neutral); margin-bottom: 0.25rem;">
+            Match Score: <strong style="color: ${scoreColor};">${match.score}/100</strong>
+          </div>
+          <div style="font-size: 0.7rem; color: var(--text-neutral); line-height: 1.4;">
+            ${match.reason}
+          </div>
+        </div>
+      </div>
+    `;
+
+    grid.appendChild(card);
+  });
+
+  section.style.display = 'block';
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showToast('Found matching items!', 'success');
 }
 
 function renderTags(container, tags) {
@@ -1248,3 +1774,328 @@ window.removeFromCanvas = removeFromCanvas;
 window.bringForward = bringForward;
 window.sendBackward = sendBackward;
 window.logWear = logWear;
+window.initAIStylist = initAIStylist;
+
+// ============================================================================
+// AI STYLIST PAGE
+// ============================================================================
+
+let selectedColorMatchItems = [];
+
+function initAIStylist() {
+  // Suggest Outfit
+  const suggestBtn = document.getElementById('suggest-outfit-btn');
+  if (suggestBtn) {
+    suggestBtn.onclick = async () => {
+      if (!aiAvailable) {
+        showToast('AI is not available. Start the mockup server first.', 'error');
+        return;
+      }
+
+      const occasion = document.getElementById('occasion-select').value;
+      const weather = document.getElementById('weather-select').value;
+
+      // Convert wardrobe items to simple format
+      const items = appData.items.map(item => ({
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        color: item.color,
+        brand: item.brand,
+        tags: item.tags || []
+      }));
+
+      if (items.length === 0) {
+        showToast('Your wardrobe is empty! Upload some items first.', 'error');
+        return;
+      }
+
+      suggestBtn.disabled = true;
+      suggestBtn.textContent = '⏳ Thinking...';
+
+      const result = await suggestOutfitWithAI(occasion, weather, items);
+
+      suggestBtn.disabled = false;
+      suggestBtn.textContent = '✨ Suggest Outfit';
+
+      if (result) {
+        displayOutfitSuggestion(result, items);
+      }
+    };
+  }
+
+  // Color Match
+  renderColorMatchItemSelector();
+
+  const analyzeColorsBtn = document.getElementById('analyze-colors-btn');
+  if (analyzeColorsBtn) {
+    analyzeColorsBtn.onclick = async () => {
+      if (selectedColorMatchItems.length < 2) {
+        showToast('Select at least 2 items to analyze colors', 'error');
+        return;
+      }
+
+      analyzeColorsBtn.disabled = true;
+      analyzeColorsBtn.textContent = '⏳ Analyzing...';
+
+      const items = selectedColorMatchItems.map(id => {
+        const item = appData.items.find(i => i.id === id);
+        return {
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          color: item.color,
+          tags: item.tags || []
+        };
+      });
+
+      const result = await analyzeColorMatch(items);
+
+      analyzeColorsBtn.disabled = false;
+      analyzeColorsBtn.textContent = '🎨 Analyze Colors';
+
+      if (result) {
+        displayColorMatchResult(result);
+      }
+    };
+  }
+
+  // Wardrobe Analysis
+  const analyzeWardrobeBtn = document.getElementById('analyze-wardrobe-btn');
+  if (analyzeWardrobeBtn) {
+    analyzeWardrobeBtn.onclick = async () => {
+      if (!aiAvailable) {
+        showToast('AI is not available. Start the mockup server first.', 'error');
+        return;
+      }
+
+      const items = appData.items.map(item => ({
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        color: item.color,
+        brand: item.brand,
+        tags: item.tags || []
+      }));
+
+      if (items.length === 0) {
+        showToast('Your wardrobe is empty! Upload some items first.', 'error');
+        return;
+      }
+
+      analyzeWardrobeBtn.disabled = true;
+      analyzeWardrobeBtn.textContent = '⏳ Analyzing...';
+
+      const result = await analyzeWardrobeGaps(items);
+
+      analyzeWardrobeBtn.disabled = false;
+      analyzeWardrobeBtn.textContent = '🔍 Analyze My Wardrobe';
+
+      if (result) {
+        displayWardrobeAnalysisResult(result);
+      }
+    };
+  }
+}
+
+function renderColorMatchItemSelector() {
+  const container = document.getElementById('color-match-items');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (appData.items.length === 0) {
+    container.innerHTML = '<p style="color: var(--text-neutral); text-align: center;">No items in wardrobe</p>';
+    return;
+  }
+
+  appData.items.forEach(item => {
+    const itemEl = document.createElement('div');
+    itemEl.className = 'item-selector-card';
+    itemEl.style.cssText = 'display: inline-block; margin: 0.5rem; padding: 0.5rem; border: 2px solid var(--border); border-radius: 0.5rem; cursor: pointer; transition: all 0.2s;';
+
+    itemEl.onclick = () => toggleColorMatchItem(item.id, itemEl);
+
+    itemEl.innerHTML = `
+      <img src="${item.image}" alt="${item.name}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 0.25rem;">
+      <div style="font-size: 0.75rem; margin-top: 0.25rem; text-align: center;">
+        ${item.name.substring(0, 15)}${item.name.length > 15 ? '...' : ''}
+      </div>
+      <div style="font-size: 0.7rem; color: var(--text-neutral); text-align: center;">
+        ${item.color}
+      </div>
+    `;
+
+    container.appendChild(itemEl);
+  });
+}
+
+function toggleColorMatchItem(itemId, element) {
+  const index = selectedColorMatchItems.indexOf(itemId);
+
+  if (index > -1) {
+    selectedColorMatchItems.splice(index, 1);
+    element.style.borderColor = 'var(--border)';
+    element.style.background = 'transparent';
+  } else {
+    selectedColorMatchItems.push(itemId);
+    element.style.borderColor = 'var(--primary)';
+    element.style.background = 'var(--warm-bg)';
+  }
+
+  // Enable/disable analyze button
+  const analyzeBtn = document.getElementById('analyze-colors-btn');
+  if (analyzeBtn) {
+    analyzeBtn.disabled = selectedColorMatchItems.length < 2;
+  }
+}
+
+function displayOutfitSuggestion(result, allItems) {
+  const container = document.getElementById('outfit-suggestion-result');
+  if (!container) return;
+
+  const selectedItems = result.selected_items.map(id => allItems.find(i => i.id === id)).filter(Boolean);
+
+  let itemsHTML = '';
+  selectedItems.forEach(item => {
+    const fullItem = appData.items.find(i => i.id === item.id);
+    if (fullItem) {
+      itemsHTML += `
+        <div style="display: inline-block; margin: 0.5rem; text-align: center;">
+          <img src="${fullItem.image}" alt="${item.name}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 0.5rem; border: 2px solid var(--primary);">
+          <div style="font-size: 0.75rem; margin-top: 0.5rem;">${item.name}</div>
+          <div style="font-size: 0.7rem; color: var(--text-neutral);">${item.category} • ${item.color}</div>
+        </div>
+      `;
+    }
+  });
+
+  let tipsHTML = '';
+  if (result.tips && result.tips.length > 0) {
+    tipsHTML = `
+      <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+        <strong>Styling Tips:</strong>
+        <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+          ${result.tips.map(tip => `<li>${tip}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    <h3 style="margin-top: 0; color: var(--primary);">✨ Suggested Outfit</h3>
+    <div style="margin: 1rem 0;">
+      ${itemsHTML}
+    </div>
+    <div style="padding: 1rem; background: white; border-radius: 0.5rem; margin-top: 1rem;">
+      <strong>Why this works:</strong>
+      <p style="margin: 0.5rem 0 0 0; color: var(--text-neutral);">${result.reasoning}</p>
+    </div>
+    ${tipsHTML}
+    <button class="btn btn-primary" style="margin-top: 1rem; width: 100%;" onclick="createOutfitFromSuggestion(${JSON.stringify(result.selected_items).replace(/"/g, '&quot;')})">
+      📸 Create Outfit on Canvas
+    </button>
+  `;
+
+  container.style.display = 'block';
+  showToast('Outfit suggested! Check the results below.', 'success');
+}
+
+function displayColorMatchResult(result) {
+  const container = document.getElementById('color-match-result');
+  if (!container) return;
+
+  const scoreColor = result.compatibility_score >= 80 ? '#27AE60' :
+                     result.compatibility_score >= 60 ? '#F39C12' : '#E74C3C';
+
+  let suggestionsHTML = '';
+  if (result.suggestions && result.suggestions.length > 0) {
+    suggestionsHTML = `
+      <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+        <strong>Suggestions:</strong>
+        <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+          ${result.suggestions.map(s => `<li>${s}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    <h3 style="margin-top: 0; color: var(--primary);">🎨 Color Analysis</h3>
+    <div style="text-align: center; margin: 1.5rem 0;">
+      <div style="font-size: 3rem; font-weight: bold; color: ${scoreColor};">
+        ${result.compatibility_score}
+      </div>
+      <div style="color: var(--text-neutral); font-size: 0.875rem;">
+        Compatibility Score
+      </div>
+    </div>
+    <div style="padding: 1rem; background: white; border-radius: 0.5rem;">
+      <p style="margin: 0; color: var(--text-neutral);">${result.analysis}</p>
+    </div>
+    ${suggestionsHTML}
+  `;
+
+  container.style.display = 'block';
+  showToast('Color analysis complete!', 'success');
+}
+
+function displayWardrobeAnalysisResult(result) {
+  const container = document.getElementById('wardrobe-analysis-result');
+  if (!container) return;
+
+  let missingItemsHTML = '';
+  if (result.missing_items && result.missing_items.length > 0) {
+    missingItemsHTML = `
+      <div class="card">
+        <h3 style="color: var(--primary);">🛍️ Suggested Items to Add</h3>
+        <ul style="line-height: 2;">
+          ${result.missing_items.map(item => `<li>${item}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  let strengthsHTML = '';
+  if (result.strengths && result.strengths.length > 0) {
+    strengthsHTML = `
+      <div class="card">
+        <h3 style="color: #27AE60;">✅ What You Have Covered</h3>
+        <ul style="line-height: 2;">
+          ${result.strengths.map(s => `<li>${s}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  let tipsHTML = '';
+  if (result.tips && result.tips.length > 0) {
+    tipsHTML = `
+      <div class="card" style="background: var(--warm-bg);">
+        <h3>💡 Wardrobe Tips</h3>
+        <ul style="line-height: 2;">
+          ${result.tips.map(tip => `<li>${tip}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top: 0;">📊 Overall Assessment</h3>
+      <p style="color: var(--text-neutral); line-height: 1.6;">${result.summary}</p>
+    </div>
+    ${missingItemsHTML}
+    ${strengthsHTML}
+    ${tipsHTML}
+  `;
+
+  container.style.display = 'block';
+  showToast('Wardrobe analysis complete!', 'success');
+}
+
+window.createOutfitFromSuggestion = function(itemIds) {
+  // Save selected items to session storage and redirect
+  sessionStorage.setItem('suggested_outfit_items', JSON.stringify(itemIds));
+  window.location.href = 'outfit-builder.html?suggested=true';
+};

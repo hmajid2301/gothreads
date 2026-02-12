@@ -1,0 +1,6 @@
+	// Database CRUD endpoints
+	mux.HandleFunc("GET /api/items", handleListItems)
+	mux.HandleFunc("GET /api/items/{id}", handleGetItem)
+	mux.HandleFunc("POST /api/items", handleCreateItem)
+	mux.HandleFunc("PUT /api/items/{id}", handleUpdateItem)
+	mux.HandleFunc("DELETE /api/items/{id}", handleDeleteItem)

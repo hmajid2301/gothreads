@@ -120,10 +120,8 @@
           <div class="calendar-header">Fri</div>
           <div class="calendar-header">Sat</div>
 
-          <!-- Week 1 -->
-          <div class="calendar-day other-month" onclick="openDayModal(1)">
-            <span class="day-number">25</span>
-          </div>
+          <div id="calendar-days">
+          <!-- Dynamically populated by JavaScript -->
           <div class="calendar-day other-month">
             <span class="day-number">26</span>
           </div>
@@ -255,8 +253,6 @@
           <div class="calendar-day" onclick="openDayModal(27)">
             <span class="day-number">27</span>
           </div>
-          <div class="calendar-day" onclick="openDayModal(28)">
-            <span class="day-number">28</span>
           </div>
         </div>
       </div>
@@ -294,16 +290,16 @@
 
   <div id="toast" class="toast"></div>
 
+  <!-- Floating Voice Button -->
+  <button class="voice-input-btn floating-voice-btn" onclick="startVoiceInput()" title="Voice commands">🎤</button>
+
   <script src="js/app.js"></script>
   <script>
-    function openDayModal(day) {
-      showToast(`Planning outfit for February ${day}`);
-      // In real app, this would open a modal
-    }
-
-    function changeMonth(delta) {
-      showToast('Month navigation (demo only)');
-    }
+    // Initialize calendar when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      checkAIStatus();
+      initCalendar();
+    });
   </script>
 </body>
 </html>

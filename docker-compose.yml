@@ -27,7 +27,7 @@ services:
       "up"
     ]
     volumes:
-      - ./backend/store/db/sqlc/migrations:/migrations:ro
+      - ./backend/store/db/migrations:/migrations:ro
     restart: "no"
 
   seaweedfs:

@@ -671,3 +671,194 @@ textarea:focus {
 .toast.info {
   background: var(--text-primary);
 }
+
+/* Chat Widget */
+#chat-btn {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  color: white;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  transition: transform 0.2s;
+}
+
+#chat-btn:hover {
+  transform: scale(1.1);
+}
+
+#chat-widget {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 400px;
+  height: 500px;
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  display: none;
+  flex-direction: column;
+  z-index: 1001;
+  overflow: hidden;
+}
+
+#chat-header {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  color: white;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#chat-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#chat-messages {
+  flex: 1;
+  padding: 1rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chat-message {
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  max-width: 80%;
+  word-wrap: break-word;
+  line-height: 1.4;
+}
+
+.user-message {
+  background: var(--primary);
+  color: white;
+  align-self: flex-end;
+  margin-left: auto;
+}
+
+.ai-message {
+  background: var(--warm-bg);
+  color: var(--text-base);
+  align-self: flex-start;
+}
+
+#chat-input-container {
+  padding: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 0.5rem;
+}
+
+#chat-input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+#chat-send-btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+#chat-send-btn:hover {
+  background: var(--primary-hover);
+}
+
+@media (max-width: 768px) {
+  #chat-widget {
+    width: calc(100vw - 2rem);
+    height: 70vh;
+    bottom: 1rem;
+    right: 1rem;
+  }
+
+  #chat-btn {
+    bottom: 1rem;
+    right: 1rem;
+  }
+}
+
+/* Voice Input Button */
+.voice-input-btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 0.75rem;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.25rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-input-btn:hover {
+  background: var(--primary-dark);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.voice-input-btn.recording {
+  background: #E74C3C;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+/* Voice button in chat */
+#chat-input-container .voice-input-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 1rem;
+  padding: 0.5rem;
+}
+
+/* Floating voice button (global) */
+.floating-voice-btn {
+  position: fixed;
+  bottom: 100px;
+  right: 2rem;
+  z-index: 999;
+}
+

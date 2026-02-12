@@ -48,7 +48,7 @@
         <h2>AI Processing</h2>
         <div class="form-group">
           <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-            <input type="checkbox" checked>
+            <input type="checkbox" id="setting-auto-remove-bg" checked>
             <span>Automatically remove backgrounds</span>
           </label>
           <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
@@ -57,7 +57,7 @@
         </div>
         <div class="form-group">
           <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-            <input type="checkbox" checked>
+            <input type="checkbox" id="setting-auto-tag" checked>
             <span>Auto-tag colors and categories</span>
           </label>
           <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
@@ -66,10 +66,10 @@
         </div>
         <div class="form-group">
           <label>Preferred AI Provider</label>
-          <select>
-            <option>Local (rembg) - Privacy-first</option>
-            <option>OpenAI Vision - Higher quality</option>
-            <option>Anthropic Claude - Alternative cloud</option>
+          <select id="setting-ai-provider">
+            <option value="local">Local (rembg) - Privacy-first</option>
+            <option value="openai">OpenAI Vision - Higher quality</option>
+            <option value="anthropic">Anthropic Claude - Alternative cloud</option>
           </select>
         </div>
       </div>
@@ -79,7 +79,7 @@
         <h2>Notifications</h2>
         <div class="form-group">
           <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-            <input type="checkbox" checked>
+            <input type="checkbox" id="setting-notifications" checked>
             <span>Push notifications</span>
           </label>
           <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
@@ -88,13 +88,14 @@
         </div>
         <div class="form-group">
           <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-            <input type="checkbox">
+            <input type="checkbox" id="setting-email-summaries">
             <span>Email summaries</span>
           </label>
           <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
             Weekly summary of your wardrobe activity
           </p>
         </div>
+        <button class="btn btn-primary" id="save-settings-btn">Save Settings</button>
       </div>
 
       <!-- Wardrobe Preferences -->
@@ -102,26 +103,26 @@
         <h2>Wardrobe Preferences</h2>
         <div class="form-group">
           <label>Max wears before laundry</label>
-          <input type="number" value="3" min="1" max="10">
+          <input type="number" id="setting-max-wears" value="3" min="1" max="10">
           <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem;">
             Default number of wears before items need washing
           </p>
         </div>
         <div class="form-group">
           <label>Currency</label>
-          <select>
-            <option>USD ($)</option>
-            <option>EUR (€)</option>
-            <option>GBP (£)</option>
-            <option>CAD (C$)</option>
+          <select id="setting-currency">
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="GBP">GBP (£)</option>
+            <option value="CAD">CAD (C$)</option>
           </select>
         </div>
         <div class="form-group">
           <label>Date format</label>
-          <select>
-            <option>MM/DD/YYYY</option>
-            <option>DD/MM/YYYY</option>
-            <option>YYYY-MM-DD</option>
+          <select id="setting-date-format">
+            <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+            <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+            <option value="YYYY-MM-DD">YYYY-MM-DD</option>
           </select>
         </div>
       </div>
@@ -134,11 +135,19 @@
           <p style="font-size: 0.875rem; color: var(--text-neutral); margin-bottom: 1rem;">
             Download all your items, outfits, and analytics
           </p>
-          <div style="display: flex; gap: 0.75rem;">
-            <button class="btn btn-secondary">Export as JSON</button>
-            <button class="btn btn-secondary">Export as CSV</button>
-            <button class="btn btn-secondary">Export as PDF</button>
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button class="btn btn-secondary" id="export-json-btn">Export as JSON</button>
+            <button class="btn btn-secondary" id="export-csv-btn">Export as CSV</button>
+            <button class="btn btn-secondary" id="export-pdf-btn">Export as PDF</button>
           </div>
+        </div>
+        <div class="form-group" style="margin-top: 2rem;">
+          <label>Import wardrobe data</label>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-bottom: 1rem;">
+            Import items and outfits from a JSON export
+          </p>
+          <button class="btn btn-secondary" id="import-data-btn">Import from JSON</button>
+          <input type="file" id="import-file-input" accept=".json" style="display: none;">
         </div>
         <div class="form-group" style="margin-top: 2rem;">
           <label style="color: #E74C3C;">Delete account</label>
@@ -169,5 +178,12 @@
   </main>
 
   <script src="js/app.js"></script>
+  <script>
+    // Initialize settings when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      checkAIStatus();
+      initSettings();
+    });
+  </script>
 </body>
 </html>

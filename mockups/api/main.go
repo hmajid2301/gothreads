@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"strings"
@@ -204,6 +205,11 @@ type ItemPosition struct {
 }
 
 func main() {
+	// Initialize database
+	if err := initDB(); err != nil {
+		log.Printf("⚠️  Database connection failed: %v", err)
+		log.Printf("   Continuing without database (AI features only)...")
+	}
 	mux := http.NewServeMux()
 
 	// Serve static mockup files from parent directory
@@ -222,6 +228,13 @@ func main() {
 	mux.HandleFunc("POST /api/rate-outfit", handleRateOutfit)
 	mux.HandleFunc("POST /api/wardrobe-gaps", handleWardrobeGaps)
 	mux.HandleFunc("GET /api/status", handleStatus)
+
+	// Database CRUD endpoints
+	mux.HandleFunc("GET /api/items", handleListItems)
+	mux.HandleFunc("GET /api/items/{id}", handleGetItem)
+	mux.HandleFunc("POST /api/items", handleCreateItem)
+	mux.HandleFunc("PUT /api/items/{id}", handleUpdateItem)
+	mux.HandleFunc("DELETE /api/items/{id}", handleDeleteItem)
 
 	// Wrap with CORS middleware
 	handler := corsMiddleware(mux)
@@ -733,8 +746,30 @@ func handleRemoveBg(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Removing background from image (%d bytes)...", len(imgBytes))
 	start := time.Now()
 
-	// Call rembg service
-	resp, err := http.Post(rembgURL+"/api/remove", "application/octet-stream", bytes.NewReader(imgBytes))
+	// Call rembg service with multipart/form-data
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	part, err := writer.CreateFormFile("file", "image.png")
+	if err != nil {
+		log.Printf("ERROR: Failed to create form file: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to prepare request")
+		return
+	}
+
+	if _, err := part.Write(imgBytes); err != nil {
+		log.Printf("ERROR: Failed to write image data: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to prepare request")
+		return
+	}
+
+	if err := writer.Close(); err != nil {
+		log.Printf("ERROR: Failed to close writer: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to prepare request")
+		return
+	}
+
+	resp, err := http.Post(rembgURL+"/api/remove", writer.FormDataContentType(), &buf)
 	if err != nil {
 		log.Printf("ERROR: rembg request failed: %v", err)
 		writeError(w, http.StatusServiceUnavailable, "Background removal service not available: "+err.Error())

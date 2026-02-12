@@ -244,7 +244,56 @@
   - ✅ Clear all resets everything properly
 
   ---
-  TEST 10: End-to-End Workflow
+  TEST 10: Voice Input Support
+
+  Page: Any page with 🎤 button (wardrobe, upload, chat, etc.)
+
+  1. Test voice input availability:
+    - Look for floating 🎤 button (bottom right)
+    - Or 🎤 button in chat interface
+    - Expected: Button visible on all main pages
+  2. Test voice commands:
+    - Click 🎤 microphone button
+    - Expected: Button turns red (🔴), toast shows "Listening..."
+    - Say: "Show my tops"
+    - Expected: Navigates to wardrobe filtered by Tops
+  3. Test chat voice input:
+    - Go to outfit-builder.html or ai-stylist.html
+    - Open chat widget (💬)
+    - Click 🎤 in chat input area
+    - Say: "Create a casual outfit"
+    - Expected: Text appears in chat input, AI responds
+  4. Test various voice commands:
+    - "Add a new item" → Goes to upload.html
+    - "Show my blue items" → Wardrobe with search
+    - "Create an outfit" → Goes to outfit-builder.html
+    - "Show analytics" → Goes to analytics.html
+    - "Find my shoes" → Wardrobe filtered by Shoes
+  5. Test error handling:
+    - Click 🎤, don't speak (silence)
+    - Expected: Timeout, button returns to normal
+    - Deny microphone permission
+    - Expected: Toast shows permission error
+  6. Test stop recording:
+    - Click 🎤 to start
+    - Click 🔴 (red button) to stop
+    - Expected: Stops listening, processes partial input
+
+  Success Criteria:
+  - ✅ Voice button visible on all pages
+  - ✅ Recording starts/stops correctly
+  - ✅ Transcription appears in chat or executes command
+  - ✅ Voice commands navigate correctly
+  - ✅ Error messages clear and helpful
+  - ✅ Works in Chrome/Edge (primary browsers)
+
+  Browser Compatibility:
+  - ✅ Chrome/Edge: Full support
+  - ⚠️ Firefox: Limited, may require flags
+  - ⚠️ Safari: Requires explicit permissions
+
+  ---
+  TEST 11: End-to-End Workflow
 
   Complete user journey:
 
@@ -314,23 +363,78 @@
   ---
   TEST COMPLETION CHECKLIST
 
-  - Multi-image upload works
-  - Background removal works
-  - AI detects category/color/brand
-  - Enhanced brand detection (13b) works
-  - Mannequin auto-loads
-  - Items can be added to canvas
-  - "Dress with AI" positions items correctly
-  - Proper layering (outerwear over tops)
-  - Outfit rating provides feedback
-  - Outfit suggestions work
-  - Color analysis scores items
-  - Style matching finds similar items
-  - Wardrobe gaps analysis complete
-  - Can upload custom body photo
-  - Can reset to mannequin
-  - Clear all resets canvas
-  - Data persists across pages
-  - All pages navigate correctly
+  Core Features:
+  - [x] Multi-image upload works
+  - [x] Background removal works
+  - [ ] AI detects category/color/brand
+  - [ ] Enhanced brand detection (13b) works
+  - [ ] Mannequin auto-loads
+  - [ ] Items can be added to canvas
+  - [ ] "Dress with AI" positions items correctly
+  - [ ] Proper layering (outerwear over tops)
+  - [ ] Outfit rating provides feedback
+  - [ ] Outfit suggestions work
+  - [ ] Color analysis scores items
+  - [ ] Style matching finds similar items
+  - [ ] Wardrobe gaps analysis complete
+  - [ ] Can upload custom body photo
+  - [ ] Can reset to mannequin
+  - [ ] Clear all resets canvas
+  - [ ] Data persists across pages
+  - [ ] All pages navigate correctly
+
+  Outfit Management:
+  - [ ] Can edit existing outfits
+  - [ ] Can duplicate outfits
+  - [ ] Can delete outfits
+  - [ ] Outfit search filters work
+  - [ ] Outfit rating filters work
+  - [ ] Outfit sorting works
+
+  Analytics:
+  - [ ] Analytics dashboard shows stats
+  - [ ] Charts render correctly
+  - [ ] Cost-per-wear calculation works
+  - [ ] AI insights generate correctly
+  - [ ] Most/least worn items displayed
+
+  Calendar:
+  - [ ] Can view calendar
+  - [ ] Can plan outfits for dates
+  - [ ] AI suggests outfits for events
+  - [ ] Calendar events save properly
+
+  Settings:
+  - [ ] Can update preferences
+  - [ ] Settings persist across pages
+  - [ ] Can configure AI models
+  - [ ] Can export/import data
+
+  Sharing:
+  - [ ] Can generate shareable links
+  - [ ] Public outfit page works
+  - [ ] Share modal displays correctly
+  - [ ] Can copy share URL
+
+  Chat Interface:
+  - [ ] Chat UI works
+  - [ ] Can request outfit via chat
+  - [ ] AI responds with suggestions
+  - [ ] Can create outfit from chat
+
+  AI Enhancements:
+  - [ ] AI can regenerate outfit variations
+  - [ ] "Make more formal/casual" works
+  - [ ] AI calendar suggestions work
+  - [ ] AI analytics insights useful
+
+  Voice Input:
+  - [ ] Voice button visible on pages
+  - [ ] Can start/stop recording
+  - [ ] Speech transcription works
+  - [ ] Voice commands navigate correctly
+  - [ ] Chat accepts voice input
+  - [ ] Error handling works (permissions, timeout)
+  - [ ] Works in Chrome/Edge
 
   All tests passing = Ready for backend implementation! 🎉

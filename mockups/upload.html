@@ -41,8 +41,8 @@
         <div class="upload-area" onclick="document.getElementById('upload-input').click()">
           <div class="upload-icon">📸</div>
           <h3>Click to upload or drag and drop</h3>
-          <p>JPEG, PNG, WebP, or AVIF (max 10MB each) - Select multiple files</p>
-          <input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp,image/avif" multiple>
+          <p>JPEG, PNG, or WebP (max 10MB each) - Select multiple files</p>
+          <input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp" multiple>
         </div>
 
         <div style="margin-top: 2rem; text-align: center;">
@@ -89,6 +89,9 @@ cd mockups/api && go run main.go</pre>
   </main>
 
   <div id="toast" class="toast"></div>
+
+  <!-- Floating Voice Button -->
+  <button class="voice-input-btn floating-voice-btn" onclick="startVoiceInput()" title="Voice commands">🎤</button>
 
   <script src="js/app.js"></script>
 </body>

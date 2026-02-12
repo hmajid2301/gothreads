@@ -268,14 +268,41 @@ async function analyzeWardrobeGaps(items) {
 
 const STORAGE_KEY = 'gothreads_mockup_data';
 
-
 const defaultData = {
-  items: [],
-  outfits: [],
+  items: [
+    // Bottoms
+    { id: 1, name: 'Easies Navy Trousers', category: 'Bottoms', price: 119.00, color: 'Navy', brand: 'MR MARVIS', wearCount: 24, image: 'images/examples/easies_navy.png' },
+    { id: 2, name: 'Easies Green Trousers', category: 'Bottoms', price: 119.00, color: 'Green', brand: 'MR MARVIS', wearCount: 18, image: 'images/examples/easies_green.png' },
+    { id: 3, name: 'Easies Royal Blue', category: 'Bottoms', price: 119.00, color: 'Royal Blue', brand: 'MR MARVIS', wearCount: 12, image: 'images/examples/easies_royal_blue.png' },
+    { id: 4, name: 'Active Beige Trousers', category: 'Bottoms', price: 129.00, color: 'Beige', brand: 'MR MARVIS', wearCount: 8, image: 'images/examples/active_biege.png' },
+    { id: 5, name: 'Smart Navy Easy', category: 'Bottoms', price: 139.00, color: 'Navy', brand: 'MR MARVIS', wearCount: 6, image: 'images/examples/smart_navy_easy.png' },
+    // Tops
+    { id: 6, name: 'Midweight Navy Tee', category: 'Tops', price: 59.00, color: 'Navy', brand: 'MR MARVIS', wearCount: 15, image: 'images/examples/midweight_navy.png' },
+    { id: 7, name: 'Midweight White Tee', category: 'Tops', price: 59.00, color: 'White', brand: 'MR MARVIS', wearCount: 22, image: 'images/examples/midweight_white.png' },
+    { id: 8, name: 'Easy Shirt Deep Blue', category: 'Tops', price: 89.00, color: 'Deep Blue', brand: 'MR MARVIS', wearCount: 10, image: 'images/examples/easy_shirt_deep.png' },
+    { id: 9, name: 'Easy Shirt Green', category: 'Tops', price: 89.00, color: 'Green', brand: 'MR MARVIS', wearCount: 7, image: 'images/examples/easy_shirt_green.png' },
+    { id: 10, name: 'Classic Polo', category: 'Tops', price: 79.00, color: 'Navy', brand: 'MR MARVIS', wearCount: 11, image: 'images/examples/76fa61f499afa36c2f955ebac85d1b470099a50c-2000x2999.png' },
+    { id: 11, name: 'Oxford Shirt', category: 'Tops', price: 99.00, color: 'Light Blue', brand: 'MR MARVIS', wearCount: 9, image: 'images/examples/93c26d039e3cb4889ee685e0493730a9faa3e1bf-2000x3000.png' },
+    { id: 12, name: 'Linen Shirt', category: 'Tops', price: 109.00, color: 'White', brand: 'MR MARVIS', wearCount: 5, image: 'images/examples/a5dec65faf4b7dca5b50eb711f669c709db40b55-2000x3000.png' },
+    { id: 13, name: 'Casual Shirt', category: 'Tops', price: 89.00, color: 'Olive', brand: 'MR MARVIS', wearCount: 7, image: 'images/examples/caa5c91e1f68eb29cdcfe46aad34d867bc1d8409-2000x3000.png' },
+    { id: 14, name: 'Summer Tee', category: 'Tops', price: 49.00, color: 'Sage', brand: 'MR MARVIS', wearCount: 14, image: 'images/examples/2449ab77bfe241627cd7caff0c745f9382f98db3-1050x1575.png' },
+    // Outerwear
+    { id: 15, name: 'Shacket', category: 'Outerwear', price: 169.00, color: 'Brown', brand: 'MR MARVIS', wearCount: 4, image: 'images/examples/shacket.png' },
+    { id: 16, name: 'Shawl Cardigan Navy', category: 'Outerwear', price: 149.00, color: 'Navy', brand: 'MR MARVIS', wearCount: 6, image: 'images/examples/shawl_navy_cardigan.jpg' },
+    { id: 17, name: 'Shawl Cardigan Beige', category: 'Outerwear', price: 149.00, color: 'Beige', brand: 'MR MARVIS', wearCount: 3, image: 'images/examples/shawl_biee_cardigan.jpg' },
+  ],
+  outfits: [
+    { id: 1, name: 'Smart Casual', itemIds: [1, 7], wearCount: 5, rating: 4.5, positions: [{id: 1, x: 120, y: 180, z: 0}, {id: 7, x: 100, y: 30, z: 1}] },
+    { id: 2, name: 'Summer Vibes', itemIds: [3, 6], wearCount: 8, rating: 5.0, positions: [{id: 3, x: 100, y: 180, z: 0}, {id: 6, x: 110, y: 30, z: 1}] },
+    { id: 3, name: 'Layered Look', itemIds: [5, 8, 15], wearCount: 3, rating: 4.0, positions: [{id: 5, x: 100, y: 200, z: 0}, {id: 8, x: 90, y: 80, z: 1}, {id: 15, x: 80, y: 20, z: 2}] },
+    { id: 4, name: 'Cozy Office', itemIds: [1, 10, 16], wearCount: 2, rating: 4.8, positions: [{id: 1, x: 100, y: 200, z: 0}, {id: 10, x: 90, y: 80, z: 1}, {id: 16, x: 80, y: 20, z: 2}] },
+    { id: 5, name: 'Weekend Relaxed', itemIds: [4, 14, 17], wearCount: 4, rating: 4.2, positions: [{id: 4, x: 100, y: 200, z: 0}, {id: 14, x: 90, y: 60, z: 1}, {id: 17, x: 85, y: 10, z: 2}] },
+  ],
   wearHistory: [],
   calendarEvents: {},
-  sharedOutfits: []
+  sharedOutfits: [],
 };
+
 function getData() {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored) {
@@ -636,22 +663,11 @@ function renderWardrobe(containerId, filterCategory = 'all') {
 
     const costPerWear = item.wearCount > 0 ? (item.price / item.wearCount).toFixed(2) : item.price.toFixed(2);
 
-    // Highlight AI-detected info or show retry button
+    // Highlight AI-detected info
     const aiInfo = item.aiAnalysis ? `
       <div style="font-size: 0.75rem; color: var(--primary); margin-top: 0.25rem;">
         ✨ ${item.color}${item.brand ? ` • ${item.brand}` : ''}
       </div>
-    ` : `
-      <div style="font-size: 0.75rem; color: var(--text-neutral); margin-top: 0.25rem;">
-        ⚠️ No AI metadata
-      </div>
-    `;
-
-    const retryButton = !item.aiAnalysis || item.aiAnalysis === '' ? `
-      <button class="btn btn-secondary" style="width: 100%; margin-top: 0.5rem; padding: 0.5rem; font-size: 0.75rem;" 
-              onclick="event.stopPropagation(); retryAIAnalysis(${item.id});">
-        🔄 Analyze with AI
-      </button>
     ` : '';
 
     card.innerHTML = `
@@ -664,7 +680,6 @@ function renderWardrobe(containerId, filterCategory = 'all') {
           <span title="Times worn">👔 ${item.wearCount}</span>
           <span title="Cost per wear">💰 $${costPerWear}</span>
         </div>
-        ${retryButton}
       </div>
     `;
 
@@ -1318,10 +1333,7 @@ function initItemDetail() {
 
   const item = appData.items.find(i => i.id === itemId);
   if (!item) {
-    showToast('Item not found. Redirecting to wardrobe...', 'error');
-    setTimeout(() => {
-      window.location.href = 'wardrobe.html';
-    }, 2000);
+    showToast('Item not found', 'error');
     return;
   }
 
@@ -1420,25 +1432,6 @@ function initItemDetail() {
   const saveBtn = document.getElementById('save-item-btn');
   if (saveBtn) {
     saveBtn.onclick = () => saveItem(itemId);
-  }
-
-  // Setup retry AI analysis button
-  const retryAIBtn = document.getElementById('retry-ai-btn');
-  if (retryAIBtn) {
-    retryAIBtn.onclick = async () => {
-      if (!aiAvailable) {
-        showToast('AI not available. Start the API server.', 'error');
-        return;
-      }
-      
-      retryAIBtn.disabled = true;
-      retryAIBtn.textContent = '⏳ Analyzing...';
-      
-      await retryAIAnalysis(itemId);
-      
-      retryAIBtn.disabled = false;
-      retryAIBtn.textContent = '🔄 Retry AI Analysis';
-    };
   }
 
   // Setup delete button
@@ -3287,10 +3280,7 @@ window.renderSharedOutfit = renderSharedOutfit;
 async function retryAIAnalysis(itemId) {
   const item = appData.items.find(i => i.id === itemId);
   if (!item) {
-    showToast('Item not found. Redirecting to wardrobe...', 'error');
-    setTimeout(() => {
-      window.location.href = 'wardrobe.html';
-    }, 2000);
+    showToast('Item not found', 'error');
     return;
   }
 
@@ -3332,179 +3322,3 @@ async function retryAIAnalysis(itemId) {
     showToast('Error during AI analysis: ' + error.message, 'error');
   }
 }
-
-// ============================================================================
-// VOICE INPUT SUPPORT
-// ============================================================================
-
-let voiceRecognition = null;
-let isRecording = false;
-
-function initVoiceInput() {
-  // Check for browser support
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  
-  if (!SpeechRecognition) {
-    console.log('Speech recognition not supported in this browser');
-    return false;
-  }
-
-  voiceRecognition = new SpeechRecognition();
-  voiceRecognition.continuous = false;
-  voiceRecognition.interimResults = false;
-  voiceRecognition.lang = 'en-US';
-
-  voiceRecognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    handleVoiceInput(transcript);
-  };
-
-  voiceRecognition.onerror = (event) => {
-    console.error('Speech recognition error:', event.error);
-    isRecording = false;
-    updateVoiceButtonState(false);
-    
-    if (event.error === 'not-allowed') {
-      showToast('Microphone access denied. Please enable in browser settings.', 'error');
-    } else {
-      showToast('Voice input failed: ' + event.error, 'error');
-    }
-  };
-
-  voiceRecognition.onend = () => {
-    isRecording = false;
-    updateVoiceButtonState(false);
-  };
-
-  return true;
-}
-
-function startVoiceInput() {
-  if (!voiceRecognition) {
-    const supported = initVoiceInput();
-    if (!supported) {
-      showToast('Voice input not supported in this browser. Try Chrome or Edge.', 'error');
-      return;
-    }
-  }
-
-  if (isRecording) {
-    stopVoiceInput();
-    return;
-  }
-
-  try {
-    voiceRecognition.start();
-    isRecording = true;
-    updateVoiceButtonState(true);
-    showToast('🎤 Listening... Speak now', 'info');
-  } catch (error) {
-    console.error('Failed to start voice input:', error);
-    showToast('Failed to start microphone', 'error');
-  }
-}
-
-function stopVoiceInput() {
-  if (voiceRecognition && isRecording) {
-    voiceRecognition.stop();
-    isRecording = false;
-    updateVoiceButtonState(false);
-  }
-}
-
-function updateVoiceButtonState(recording) {
-  const voiceBtns = document.querySelectorAll('.voice-input-btn');
-  voiceBtns.forEach(btn => {
-    if (recording) {
-      btn.classList.add('recording');
-      btn.innerHTML = '🔴';
-      btn.title = 'Recording... Click to stop';
-    } else {
-      btn.classList.remove('recording');
-      btn.innerHTML = '🎤';
-      btn.title = 'Voice input';
-    }
-  });
-}
-
-function handleVoiceInput(transcript) {
-  console.log('Voice transcript:', transcript);
-  showToast(`Heard: "${transcript}"`, 'success');
-
-  // Check which page we're on and handle appropriately
-  const chatInput = document.getElementById('chat-input');
-  if (chatInput) {
-    // In chat interface
-    chatInput.value = transcript;
-    const sendBtn = document.getElementById('chat-send-btn');
-    if (sendBtn) sendBtn.click();
-    return;
-  }
-
-  // Parse voice commands for other pages
-  processVoiceCommand(transcript);
-}
-
-async function processVoiceCommand(transcript) {
-  const lower = transcript.toLowerCase();
-
-  // Upload/Add item commands
-  if (lower.includes('add') || lower.includes('upload') || lower.includes('new item')) {
-    window.location.href = 'upload.html';
-    return;
-  }
-
-  // Create outfit commands
-  if (lower.includes('create outfit') || lower.includes('make outfit')) {
-    window.location.href = 'outfit-builder.html';
-    return;
-  }
-
-  // Search/Filter commands
-  if (lower.includes('show') || lower.includes('find') || lower.includes('search')) {
-    // Extract category or color
-    const categories = ['tops', 'bottoms', 'shoes', 'outerwear', 'accessories'];
-    const colors = ['blue', 'red', 'white', 'black', 'green', 'navy', 'beige'];
-    
-    for (const cat of categories) {
-      if (lower.includes(cat)) {
-        const capitalizedCat = cat.charAt(0).toUpperCase() + cat.slice(0, -1);
-        window.location.href = `wardrobe.html?category=${capitalizedCat}`;
-        return;
-      }
-    }
-
-    for (const color of colors) {
-      if (lower.includes(color)) {
-        window.location.href = `wardrobe.html?search=${color}`;
-        return;
-      }
-    }
-
-    // Default to wardrobe
-    window.location.href = 'wardrobe.html';
-    return;
-  }
-
-  // Analytics commands
-  if (lower.includes('stats') || lower.includes('analytics') || lower.includes('cost per wear')) {
-    window.location.href = 'analytics.html';
-    return;
-  }
-
-  // Calendar commands
-  if (lower.includes('calendar') || lower.includes('what should i wear')) {
-    window.location.href = 'calendar.html';
-    return;
-  }
-
-  // AI Stylist commands
-  if (lower.includes('suggest') || lower.includes('recommend') || lower.includes('what goes with')) {
-    window.location.href = 'ai-stylist.html';
-    return;
-  }
-
-  // If we couldn't parse the command, show help
-  showToast('Try: "Show my tops", "Create an outfit", "Add new item"', 'info');
-}
-

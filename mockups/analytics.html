@@ -28,20 +28,20 @@
       <!-- Stats Overview -->
       <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-value">24</div>
+          <div class="stat-value" id="stat-total-items">24</div>
           <div class="stat-label">Total Items</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">$1,847</div>
+          <div class="stat-value" id="stat-total-investment">$1,847</div>
           <div class="stat-label">Total Investment</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">$42.15</div>
+          <div class="stat-value" id="stat-avg-cpw">$42.15</div>
           <div class="stat-label">Avg Cost Per Wear</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">89</div>
-          <div class="stat-label">Total Wears (30d)</div>
+          <div class="stat-value" id="stat-total-wears">89</div>
+          <div class="stat-label">Total Wears</div>
         </div>
       </div>
 
@@ -49,14 +49,10 @@
       <div class="grid grid-2">
         <div class="card">
           <h2>Category Breakdown</h2>
-          <div style="min-height: 300px; display: flex; align-items: center; justify-content: center; background: var(--warm-bg); border-radius: 0.5rem; margin-top: 1rem;">
+          <div id="category-breakdown" style="min-height: 300px; display: flex; align-items: center; justify-content: center; background: var(--warm-bg); border-radius: 0.5rem; margin-top: 1rem; padding: 2rem;">
             <div style="text-align: center;">
               <div style="font-size: 3rem;">📊</div>
-              <p style="color: var(--text-neutral);">Pie chart (ApexCharts)</p>
-              <p style="font-size: 0.875rem; color: var(--text-neutral);">
-                Tops: 35% • Bottoms: 25%<br>
-                Shoes: 20% • Outerwear: 15% • Accessories: 5%
-              </p>
+              <p style="color: var(--text-neutral);">Loading...</p>
             </div>
           </div>
         </div>
@@ -87,37 +83,8 @@
               <th style="padding: 1rem;">Cost Per Wear</th>
             </tr>
           </thead>
-          <tbody>
-            <tr style="border-bottom: 1px solid var(--border);">
-              <td style="padding: 1rem; font-weight: 600;">Blue Denim Jeans</td>
-              <td style="padding: 1rem; color: var(--text-neutral);">Bottoms</td>
-              <td style="padding: 1rem;">24</td>
-              <td style="padding: 1rem; color: var(--primary);">$3.33</td>
-            </tr>
-            <tr style="border-bottom: 1px solid var(--border);">
-              <td style="padding: 1rem; font-weight: 600;">White T-Shirt</td>
-              <td style="padding: 1rem; color: var(--text-neutral);">Tops</td>
-              <td style="padding: 1rem;">18</td>
-              <td style="padding: 1rem; color: var(--primary);">$1.67</td>
-            </tr>
-            <tr style="border-bottom: 1px solid var(--border);">
-              <td style="padding: 1rem; font-weight: 600;">Black Leather Jacket</td>
-              <td style="padding: 1rem; color: var(--text-neutral);">Outerwear</td>
-              <td style="padding: 1rem;">12</td>
-              <td style="padding: 1rem; color: var(--primary);">$16.67</td>
-            </tr>
-            <tr style="border-bottom: 1px solid var(--border);">
-              <td style="padding: 1rem; font-weight: 600;">Red Sneakers</td>
-              <td style="padding: 1rem; color: var(--text-neutral);">Shoes</td>
-              <td style="padding: 1rem;">8</td>
-              <td style="padding: 1rem; color: var(--primary);">$11.25</td>
-            </tr>
-            <tr>
-              <td style="padding: 1rem; font-weight: 600;">Gray Hoodie</td>
-              <td style="padding: 1rem; color: var(--text-neutral);">Tops</td>
-              <td style="padding: 1rem;">6</td>
-              <td style="padding: 1rem; color: var(--primary);">$10.00</td>
-            </tr>
+          <tbody id="most-worn-tbody">
+            <tr><td colspan="4" style="padding: 1rem; text-align: center; color: var(--text-neutral);">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -135,27 +102,18 @@
               <th style="padding: 1rem;">Cost Per Wear</th>
             </tr>
           </thead>
-          <tbody>
-            <tr style="border-bottom: 1px solid var(--border);">
-              <td style="padding: 1rem; font-weight: 600;">Fancy Watch</td>
-              <td style="padding: 1rem; color: var(--text-neutral);">Accessories</td>
-              <td style="padding: 1rem;">1</td>
-              <td style="padding: 1rem; color: #E74C3C;">$299.00</td>
-            </tr>
-            <tr style="border-bottom: 1px solid var(--border);">
-              <td style="padding: 1rem; font-weight: 600;">Wool Suit</td>
-              <td style="padding: 1rem; color: var(--text-neutral);">Outerwear</td>
-              <td style="padding: 1rem;">2</td>
-              <td style="padding: 1rem; color: #E74C3C;">$249.50</td>
-            </tr>
-            <tr>
-              <td style="padding: 1rem; font-weight: 600;">Dress Shoes</td>
-              <td style="padding: 1rem; color: var(--text-neutral);">Shoes</td>
-              <td style="padding: 1rem;">3</td>
-              <td style="padding: 1rem; color: #E74C3C;">$43.33</td>
-            </tr>
+          <tbody id="least-worn-tbody">
+            <tr><td colspan="4" style="padding: 1rem; text-align: center; color: var(--text-neutral);">Loading...</td></tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- AI Insights -->
+      <div class="card">
+        <h2>AI Analytics Insights</h2>
+        <p style="color: var(--text-neutral); margin-bottom: 1rem;">Get personalized insights about your wardrobe usage patterns</p>
+        <button class="btn btn-primary" id="ai-analytics-btn">✨ Get AI Insights</button>
+        <div id="ai-insights-container" style="display: none; margin-top: 1rem;"></div>
       </div>
 
       <!-- Spending Over Time -->
@@ -174,6 +132,16 @@
     </div>
   </main>
 
+  <!-- Floating Voice Button -->
+  <button class="voice-input-btn floating-voice-btn" onclick="startVoiceInput()" title="Voice commands">🎤</button>
+
   <script src="js/app.js"></script>
+  <script>
+    // Initialize analytics when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      checkAIStatus();
+      initAnalytics();
+    });
+  </script>
 </body>
 </html>

@@ -124,6 +124,10 @@ tasks:
     dir: "{{.BACKEND_DIR}}"
     cmd: psql "${GOTHREADS_DB_DATABASE_URL}" -f store/db/sqlc/seeds/seed.sql
 
+  "db:clear":
+    desc: Clear all data from database (keep schema)
+    cmd: docker exec gothreads-postgres-1 psql -U postgres -d gothreads -c "TRUNCATE users, items, outfits, outfit_items, wear_history, calendar_events, shared_outfits, outfit_ratings, user_settings CASCADE;"
+
   "db:reset":
     desc: Reset database (drop, create, migrate, seed)
     cmds:
@@ -227,7 +231,17 @@ tasks:
     cmd: pnpm format
 
   # Mockup tasks
+  "mockups:services":
+    desc: Start required services for mockups (postgres, rembg, ollama)
+    cmds:
+      - docker compose up -d postgres rembg ollama
+      - echo "⏳ Waiting for services to be ready..."
+      - sleep 5
+      - echo "✅ Services started"
+
   "mockups:dev":
     desc: Start mockup server with AI features (port 8556)
     dir: "{{.MOCKUPS_DIR}}/api"
-    cmd: go run main.go
+    cmds:
+      - task: mockups:services
+      - go run .

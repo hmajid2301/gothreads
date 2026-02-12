@@ -50,7 +50,7 @@
           </button>
           <button class="btn btn-secondary" onclick="clearCanvas()">Clear All</button>
           <button class="btn btn-primary" id="save-outfit">💾 Save Outfit</button>
-          <input type="file" id="body-upload-input" accept="image/jpeg,image/png,image/webp,image/avif" style="display: none;">
+          <input type="file" id="body-upload-input" accept="image/jpeg,image/png,image/webp" style="display: none;">
         </div>
       </div>
 
@@ -125,6 +125,32 @@
 
   <div id="toast" class="toast"></div>
 
+  <!-- Chat Widget -->
+  <button id="chat-btn" title="Chat with AI">💬</button>
+  <div id="chat-widget">
+    <div id="chat-header">
+      <h3 style="margin: 0; font-size: 1rem;">AI Outfit Assistant</h3>
+      <button id="chat-close">&times;</button>
+    </div>
+    <div id="chat-messages">
+      <div class="chat-message ai-message">
+        Hi! I can help you create outfits. Try saying "Show me a casual look" or "Add a blue shirt"
+      </div>
+    </div>
+    <div id="chat-input-container">
+      <button class="voice-input-btn" onclick="startVoiceInput()" title="Voice input">🎤</button>
+      <input type="text" id="chat-input" placeholder="Ask me anything... or use voice 🎤">
+      <button id="chat-send-btn">Send</button>
+    </div>
+  </div>
+
   <script src="js/app.js"></script>
+  <script>
+    // Initialize chat widget when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      checkAIStatus();
+      initChat();
+    });
+  </script>
 </body>
 </html>

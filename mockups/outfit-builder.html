@@ -28,7 +28,7 @@
           <div>
             <h1 style="margin: 0;">Create Outfit</h1>
             <p style="color: var(--text-neutral); font-size: 0.875rem; margin: 0.25rem 0 0 0;">
-              Select items from the right, then click "✨ Dress with AI" to position them automatically
+              Click "✨ Dress with AI" to generate outfit for today's weather in London, or select items manually
             </p>
           </div>
           <div id="ai-status" style="font-size: 0.875rem;">
@@ -36,9 +36,22 @@
           </div>
         </div>
         <div class="toolbar-actions" style="margin-top: 1rem;">
-          <button class="btn btn-primary" id="dress-with-ai" style="background: linear-gradient(135deg, #E8807B 0%, #D96B66 100%); font-size: 1rem; padding: 0.75rem 1.5rem;">
-            ✨ Dress with AI
-          </button>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <select id="occasion-select" class="btn" style="min-width: 150px; padding: 0.75rem;">
+              <option value="casual">Casual</option>
+              <option value="work">Work/Business</option>
+              <option value="formal">Formal Event</option>
+              <option value="date">Date Night</option>
+              <option value="gym">Gym/Workout</option>
+              <option value="beach">Beach/Pool</option>
+              <option value="party">Party/Night Out</option>
+              <option value="outdoor">Outdoor Activity</option>
+              <option value="random">🎲 Surprise Me</option>
+            </select>
+            <button class="btn btn-primary" id="dress-with-ai" style="background: linear-gradient(135deg, #E8807B 0%, #D96B66 100%); font-size: 1rem; padding: 0.75rem 1.5rem;">
+              ✨ Dress with AI
+            </button>
+          </div>
           <button class="btn btn-secondary" id="rate-outfit-btn">
             ⭐ Rate Outfit
           </button>
@@ -87,12 +100,14 @@
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 1.5rem;">
           <div>
-            <h4 style="margin-top: 0;">🚀 Quick Start (3 Steps)</h4>
+            <h4 style="margin-top: 0;">🚀 Quick Start (2 Steps)</h4>
             <ol style="line-height: 2; font-size: 0.95rem;">
-              <li><strong>Select Items</strong> from the right sidebar</li>
               <li><strong>Click "✨ Dress with AI"</strong></li>
-              <li><strong>Watch AI position everything!</strong></li>
+              <li><strong>AI picks outfit for today's weather & positions it!</strong></li>
             </ol>
+            <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 1rem;">
+              Or manually select items first, then AI will just position them.
+            </p>
           </div>
 
           <div>

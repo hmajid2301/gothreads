@@ -64,39 +64,6 @@ services:
     environment:
       MODEL: u2net
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    # For CPU-only, comment out the deploy section above
-
-  # Pull vision model on startup (llava for image understanding)
-  ollama-pull:
-    image: ollama/ollama:latest
-    depends_on:
-      - ollama
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        sleep 5
-        ollama pull llava:7b
-        ollama pull llama3.2:3b
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      OLLAMA_HOST: ollama:11434
-    restart: "no"
-
 volumes:
   postgres-data:
   seaweedfs-data:
-  ollama-data:

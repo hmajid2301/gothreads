@@ -168,12 +168,14 @@ type WardrobeGapsResponse struct {
 
 // ClothingItemForMatch simplified item info for AI matching
 type ClothingItemForMatch struct {
-	ID       int      `json:"id"`
-	Name     string   `json:"name"`
-	Category string   `json:"category"`
-	Color    string   `json:"color"`
-	Brand    string   `json:"brand,omitempty"`
-	Tags     []string `json:"tags,omitempty"`
+	ID          int      `json:"id"`
+	Name        string   `json:"name"`
+	Category    string   `json:"category"`
+	Color       string   `json:"color"`
+	Brand       string   `json:"brand,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Description string   `json:"description,omitempty"`
+	WearCount   int      `json:"wear_count,omitempty"`
 }
 
 // DressRequest for AI-assisted clothing placement
@@ -210,6 +212,13 @@ func main() {
 		log.Printf("⚠️  Database connection failed: %v", err)
 		log.Printf("   Continuing without database (AI features only)...")
 	}
+
+	// Initialize S3
+	if err := initS3(); err != nil {
+		log.Printf("⚠️  S3 connection failed: %v", err)
+		log.Printf("   Continuing without S3 (will store base64 in database)...")
+	}
+
 	mux := http.NewServeMux()
 
 	// Serve static mockup files from parent directory
@@ -235,6 +244,9 @@ func main() {
 	mux.HandleFunc("POST /api/items", handleCreateItem)
 	mux.HandleFunc("PUT /api/items/{id}", handleUpdateItem)
 	mux.HandleFunc("DELETE /api/items/{id}", handleDeleteItem)
+
+	// S3 upload endpoint
+	mux.HandleFunc("POST /api/upload", handleS3Upload)
 
 	// Wrap with CORS middleware
 	handler := corsMiddleware(mux)
@@ -816,34 +828,60 @@ func handleSuggestOutfit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build item list for AI
+	// Build item list for AI with full details
 	itemsList := ""
 	for _, item := range req.Items {
 		tags := ""
 		if len(item.Tags) > 0 {
 			tags = " [" + strings.Join(item.Tags, ", ") + "]"
 		}
-		itemsList += fmt.Sprintf("- ID %d: %s (%s, %s)%s\n", item.ID, item.Name, item.Category, item.Color, tags)
+
+		brand := ""
+		if item.Brand != "" {
+			brand = " by " + item.Brand
+		}
+
+		desc := ""
+		if item.Description != "" {
+			desc = " - " + item.Description
+		}
+
+		worn := ""
+		if item.WearCount > 0 {
+			worn = fmt.Sprintf(" (worn %dx)", item.WearCount)
+		}
+
+		itemsList += fmt.Sprintf("- ID %d: %s%s (%s, %s)%s%s%s\n",
+			item.ID, item.Name, brand, item.Category, item.Color, tags, desc, worn)
 	}
 
-	prompt := fmt.Sprintf(`You are a professional fashion stylist. Create an outfit from these wardrobe items:
+	prompt := fmt.Sprintf(`Help me pick an outfit from my wardrobe.
 
-%s
 Occasion: %s
 Weather: %s
 
-Select 3-5 items that work well together for this occasion and weather. Consider:
-- Appropriate layering for the weather
-- Color coordination
-- Style cohesion
-- Occasion appropriateness
+Available items (%d):
+%s
 
-Respond ONLY with JSON:
+Select items for a complete outfit. Include:
+- ONE top (shirt, t-shirt, blouse)
+- ONE bottom (pants, jeans, skirt, shorts)
+- ONE pair of shoes
+- OPTIONAL: One outerwear (jacket, coat, cardigan, sweater) - ONLY if weather requires it
+- OPTIONAL: 1-2 accessories (watch, belt, scarf, hat, bag)
+
+Important:
+- Choose colors that complement each other
+- Consider weather (add layers if cold, lighter items if warm)
+- Match formality to occasion
+- Total: 3-6 items maximum
+
+Respond with JSON:
 {
   "selected_items": [1, 5, 7],
-  "reasoning": "Why these items work together",
-  "tips": ["Style tip 1", "Style tip 2"]
-}`, itemsList, req.Occasion, req.Weather)
+  "reasoning": "Why these work together (mention colors and weather)",
+  "tips": ["Styling tip 1", "Styling tip 2"]
+}`, req.Occasion, req.Weather, len(req.Items), itemsList)
 
 	log.Printf("Suggesting outfit for %s / %s with %d items", req.Occasion, req.Weather, len(req.Items))
 	start := time.Now()

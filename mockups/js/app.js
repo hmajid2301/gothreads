@@ -44,7 +44,7 @@ function updateAIStatusIndicator(status) {
   }
 }
 
-async function analyzeImageWithAI(imageDataUrl, model = null) {
+async function analyzeImageWithAI(imageDataUrl, model = null, customPrompt = null) {
   if (!aiAvailable) {
     return null;
   }
@@ -53,6 +53,9 @@ async function analyzeImageWithAI(imageDataUrl, model = null) {
     const requestBody = { image: imageDataUrl };
     if (model) {
       requestBody.model = model;
+    }
+    if (customPrompt) {
+      requestBody.prompt = customPrompt;
     }
 
     const resp = await fetch(`${AI_API_URL}/analyze`, {
@@ -502,6 +505,27 @@ async function handleSingleFileUpload(file, shouldRedirect = true) {
           console.log('Background removal failed, using original image');
         }
 
+        // Upload image to S3
+        updateProcessingStatus('Uploading image to storage...');
+        let imageURL = imageData;
+        try {
+          const uploadResponse = await fetch('http://localhost:8556/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: imageData })
+          });
+
+          if (uploadResponse.ok) {
+            const uploadResult = await uploadResponse.json();
+            imageURL = uploadResult.url;
+            console.log('Image uploaded to S3:', imageURL);
+          } else {
+            console.warn('S3 upload failed, falling back to base64');
+          }
+        } catch (uploadError) {
+          console.warn('S3 upload error, falling back to base64:', uploadError);
+        }
+
         // Try AI analysis if available
         let aiResult = null;
         if (aiAvailable) {
@@ -512,40 +536,60 @@ async function handleSingleFileUpload(file, shouldRedirect = true) {
           }
         }
 
+        // Check if AI analysis has real data (not defaults)
+        const hasValidAIData = aiResult &&
+                               aiResult.category &&
+                               aiResult.category !== 'Unknown' &&
+                               aiResult.description &&
+                               aiResult.description !== 'Unable to analyze';
+
+        // Save to database via API
         const newItem = {
-          id: Date.now() + Math.random(), // Ensure unique IDs for batch uploads
-          name: aiResult?.description?.substring(0, 50) || file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
-          category: aiResult?.category || 'Uncategorized',
+          name: hasValidAIData ? aiResult.description.substring(0, 50) : 'Unnamed Item',
+          category: hasValidAIData ? aiResult.category : 'Uncategorized',
           price: 0,
-          color: aiResult?.color || '',
-          brand: aiResult?.brand || '',
-          wearCount: 0,
-          image: imageData,
-          tags: aiResult?.tags || [],
-          aiAnalysis: aiResult?.raw_response || null,
-          uploadedAt: new Date().toISOString(),
+          color: hasValidAIData ? (aiResult.color || '') : '',
+          brand: hasValidAIData ? (aiResult.brand || '') : '',
+          image_url: imageURL,
+          tags: hasValidAIData ? (aiResult.tags || []) : [],
+          ai_analysis: hasValidAIData ? (aiResult.raw_response || null) : null,
         };
 
-        appData.items.push(newItem);
-        saveData(appData);
+        try {
+          const response = await fetch('http://localhost:8556/api/items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newItem)
+          });
 
-        if (shouldRedirect) {
-          closeModal();
-
-          if (aiResult) {
-            const brandText = aiResult.brand ? ` by ${aiResult.brand}` : '';
-            showToast(`AI detected: ${aiResult.color} ${aiResult.category}${brandText}`, 'success');
-          } else {
-            showToast('Item uploaded! Edit details below.', 'success');
+          if (!response.ok) {
+            throw new Error('Failed to save item to database');
           }
 
-          // Redirect to edit page
-          setTimeout(() => {
-            window.location.href = `item-detail.html?id=${newItem.id}`;
-          }, 1000);
-        }
+          const savedItem = await response.json();
 
-        resolve(true);
+          if (shouldRedirect) {
+            closeModal();
+
+            if (hasValidAIData) {
+              const brandText = aiResult.brand ? ` by ${aiResult.brand}` : '';
+              showToast(`AI detected: ${aiResult.color} ${aiResult.category}${brandText}`, 'success');
+            } else {
+              showToast('⚠️ AI could not analyze item. Please enter details manually.', 'info');
+            }
+
+            // Redirect to edit page
+            setTimeout(() => {
+              window.location.href = `item-detail.html?id=${savedItem.id}`;
+            }, 1000);
+          }
+
+          resolve(true);
+        } catch (apiError) {
+          console.error('API save error:', apiError);
+          showToast('Failed to save item: ' + apiError.message, 'error');
+          resolve(false);
+        }
       } catch (error) {
         console.error('Upload error:', error);
         resolve(false);
@@ -587,7 +631,7 @@ function updateProcessingStatus(text) {
 // WARDROBE GRID
 // ============================================================================
 
-function renderWardrobe(containerId, filterCategory = 'all') {
+async function renderWardrobe(containerId, filterCategory = 'all') {
   const container = document.getElementById(containerId);
   if (!container) return;
 
@@ -595,14 +639,24 @@ function renderWardrobe(containerId, filterCategory = 'all') {
   const urlParams = new URLSearchParams(window.location.search);
   const showRecent = urlParams.get('recent') === 'true';
 
-  let items = appData.items;
+  // Fetch items from API
+  let items = [];
+  try {
+    const response = await fetch('http://localhost:8556/api/items');
+    if (response.ok) {
+      items = await response.json();
+    }
+  } catch (error) {
+    console.error('Failed to fetch items:', error);
+  }
+
   if (filterCategory !== 'all') {
     items = items.filter(item => item.category === filterCategory);
   }
 
   // Sort by upload date if showing recent
   if (showRecent) {
-    items = items.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
+    items = items.sort((a, b) => new Date(b.uploaded_at || 0) - new Date(a.uploaded_at || 0));
   }
 
   container.innerHTML = '';
@@ -634,10 +688,12 @@ function renderWardrobe(containerId, filterCategory = 'all') {
     card.className = 'item-card';
     card.onclick = () => window.location.href = `item-detail.html?id=${item.id}`;
 
-    const costPerWear = item.wearCount > 0 ? (item.price / item.wearCount).toFixed(2) : item.price.toFixed(2);
+    const wearCount = item.wear_count || 0;
+    const price = item.price || 0;
+    const costPerWear = wearCount > 0 ? (price / wearCount).toFixed(2) : price.toFixed(2);
 
     // Highlight AI-detected info or show retry button
-    const aiInfo = item.aiAnalysis ? `
+    const aiInfo = item.ai_analysis ? `
       <div style="font-size: 0.75rem; color: var(--primary); margin-top: 0.25rem;">
         ✨ ${item.color}${item.brand ? ` • ${item.brand}` : ''}
       </div>
@@ -647,21 +703,21 @@ function renderWardrobe(containerId, filterCategory = 'all') {
       </div>
     `;
 
-    const retryButton = !item.aiAnalysis || item.aiAnalysis === '' ? `
-      <button class="btn btn-secondary" style="width: 100%; margin-top: 0.5rem; padding: 0.5rem; font-size: 0.75rem;" 
+    const retryButton = !item.ai_analysis || item.ai_analysis === '' ? `
+      <button class="btn btn-secondary" style="width: 100%; margin-top: 0.5rem; padding: 0.5rem; font-size: 0.75rem;"
               onclick="event.stopPropagation(); retryAIAnalysis(${item.id});">
         🔄 Analyze with AI
       </button>
     ` : '';
 
     card.innerHTML = `
-      <img src="${item.image}" alt="${item.name}" class="item-image" loading="lazy">
+      <img src="${item.image_url}" alt="${item.name}" class="item-image" loading="lazy">
       <div class="item-info">
         <div class="item-name">${item.name}</div>
-        <div class="item-meta">${item.category} • $${item.price.toFixed(2)}</div>
+        <div class="item-meta">${item.category} • $${price.toFixed(2)}</div>
         ${aiInfo}
         <div class="item-stats">
-          <span title="Times worn">👔 ${item.wearCount}</span>
+          <span title="Times worn">👔 ${wearCount}</span>
           <span title="Cost per wear">💰 $${costPerWear}</span>
         </div>
         ${retryButton}
@@ -947,8 +1003,10 @@ function addToCanvas(item) {
   canvasItem.style.zIndex = z;
 
   canvasItem.innerHTML = `
-    <img src="${item.image}" alt="${item.name}" draggable="false">
+    <img src="${item.image}" alt="${item.name}" draggable="false" style="width: 100%; height: 100%; object-fit: contain;">
     <div class="canvas-item-controls">
+      <button onclick="resizeCanvasItem(this.closest('.canvas-item'), 'bigger')" title="Make bigger">+</button>
+      <button onclick="resizeCanvasItem(this.closest('.canvas-item'), 'smaller')" title="Make smaller">−</button>
       <button onclick="bringForward(this.closest('.canvas-item'))" title="Bring forward">↑</button>
       <button onclick="sendBackward(this.closest('.canvas-item'))" title="Send backward">↓</button>
       <button onclick="removeFromCanvas(${item.id})" title="Remove">×</button>
@@ -1021,6 +1079,27 @@ function bringForward(element) {
 function sendBackward(element) {
   const current = parseInt(element.style.zIndex) || 0;
   element.style.zIndex = Math.max(0, current - 1);
+}
+
+function resizeCanvasItem(element, direction) {
+  const currentWidth = element.offsetWidth;
+  const currentHeight = element.offsetHeight;
+
+  // Resize by 20px increments
+  const change = direction === 'bigger' ? 20 : -20;
+  const newWidth = Math.max(50, currentWidth + change); // Minimum 50px
+  const newHeight = Math.max(50, currentHeight + change);
+
+  element.style.width = `${newWidth}px`;
+  element.style.height = `${newHeight}px`;
+
+  // Update in currentOutfitItems
+  const itemId = parseInt(element.dataset.itemId);
+  const item = currentOutfitItems.find(i => i.id === itemId);
+  if (item) {
+    item.width = newWidth;
+    item.height = newHeight;
+  }
 }
 
 // Drag handling for canvas items
@@ -1101,6 +1180,48 @@ function clearCanvas() {
   showToast('Canvas cleared', 'info');
 }
 
+async function getWeatherForLocation(lat = 51.5074, lon = -0.1278) {
+  // Default: London coordinates
+  try {
+    const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto`);
+    const data = await response.json();
+
+    const temp = data.current.temperature_2m;
+    const weatherCode = data.current.weather_code;
+
+    // Weather code to description mapping
+    const weatherDesc = weatherCode <= 3 ? 'clear' :
+                       weatherCode <= 67 ? 'rainy' :
+                       weatherCode <= 77 ? 'snowy' :
+                       weatherCode <= 99 ? 'stormy' : 'mild';
+
+    // Temperature to weather condition
+    const condition = temp < 5 ? 'cold' : temp < 15 ? 'mild' : temp < 25 ? 'warm' : 'hot';
+
+    // Determine season based on month
+    const month = new Date().getMonth();
+    const season = month >= 2 && month <= 4 ? 'spring' :
+                  month >= 5 && month <= 7 ? 'summer' :
+                  month >= 8 && month <= 10 ? 'autumn' : 'winter';
+
+    return {
+      temperature: temp,
+      condition,
+      weather: weatherDesc,
+      season
+    };
+  } catch (error) {
+    console.error('Weather fetch error:', error);
+    // Fallback
+    return {
+      temperature: 15,
+      condition: 'mild',
+      weather: 'mild',
+      season: 'spring'
+    };
+  }
+}
+
 async function handleDressWithAI() {
   if (!aiAvailable) {
     showToast('AI not available. Start the API server.', 'error');
@@ -1115,10 +1236,415 @@ async function handleDressWithAI() {
     return;
   }
 
+  // If no items on canvas, generate outfit suggestion first
   if (currentOutfitItems.length === 0) {
-    showToast('Please add clothing items to the canvas first!', 'error');
+    await generateOutfitSuggestion();
     return;
   }
+
+  // Position existing items on canvas
+  await positionItemsWithAI();
+}
+
+async function generateOutfitSuggestion() {
+  showProcessingModal('Getting weather for London... ☁️');
+
+  try {
+    // Fetch weather for London
+    const weather = await getWeatherForLocation(51.5074, -0.1278);
+
+    // Get current date/time info
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+    updateProcessingStatus(`📍 London | ${dateStr} ${timeStr}<br>🌡️ ${weather.temperature}°C, ${weather.condition} | ${weather.weather} | ${weather.season}<br>🤖 AI is selecting outfit...`);
+
+    // Fetch all items from wardrobe
+    const response = await fetch('http://localhost:8556/api/items');
+    if (!response.ok) {
+      throw new Error('Failed to fetch wardrobe items');
+    }
+    const allItems = await response.json();
+
+    if (!allItems || allItems.length === 0) {
+      closeModal();
+      showToast('No items in wardrobe. Upload some clothing first!', 'error');
+      return;
+    }
+
+    updateProcessingStatus(`📍 London | ${dateStr} ${timeStr}<br>🌡️ ${weather.temperature}°C, ${weather.condition} | ${weather.weather} | ${weather.season}<br>🤖 Analyzing ${allItems.length} items in your wardrobe...`);
+
+    // Prepare items for AI with full context
+    const itemsForAI = allItems.map(item => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      color: item.color,
+      brand: item.brand || '',
+      tags: item.tags || [],
+      description: item.ai_analysis || '',
+      wear_count: item.wear_count || 0
+    }));
+
+    // Get selected occasion or randomize
+    const occasionSelect = document.getElementById('occasion-select');
+    let occasion = occasionSelect ? occasionSelect.value : 'casual';
+
+    // If "Surprise Me" is selected, randomize the occasion
+    if (occasion === 'random') {
+      const occasions = ['casual', 'work', 'formal', 'date', 'party', 'outdoor'];
+      occasion = occasions[Math.floor(Math.random() * occasions.length)];
+      console.log('🎲 Randomized occasion:', occasion);
+    }
+
+    const weatherDesc = `${weather.condition}, ${weather.weather}, ${weather.season}`;
+    const suggestion = await suggestOutfitWithAI(occasion, weatherDesc, itemsForAI);
+
+    if (!suggestion || !suggestion.selected_items || suggestion.selected_items.length === 0) {
+      closeModal();
+      showToast('AI could not suggest an outfit', 'error');
+      return;
+    }
+
+    closeModal();
+
+    // Show weather info card on the page
+    displayWeatherInfo(weather, dateStr, timeStr, suggestion, occasion);
+
+    // Add suggested items to canvas
+    for (const itemId of suggestion.selected_items) {
+      const item = allItems.find(i => i.id === itemId);
+      if (item) {
+        // Convert to old format for compatibility
+        const canvasItem = {
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          image: item.image_url,
+          color: item.color,
+          brand: item.brand
+        };
+        addToCanvas(canvasItem);
+      }
+    }
+
+    showToast(`✨ Outfit suggested for ${weather.condition} weather! Check the info box below.`, 'success');
+
+    // Store context for chat refinements
+    window.currentOutfitContext = {
+      weather,
+      occasion,
+      allItems,
+      selectedItems: suggestion.selected_items,
+      reasoning: suggestion.reasoning
+    };
+
+    // Show refinement options
+    showOutfitRefinementOptions();
+
+    // Wait a bit then position the items
+    setTimeout(async () => {
+      await positionItemsWithAI();
+    }, 1500);
+
+  } catch (error) {
+    closeModal();
+    console.error('Outfit generation error:', error);
+    showToast('Error generating outfit: ' + error.message, 'error');
+  }
+}
+
+function displayWeatherInfo(weather, dateStr, timeStr, suggestion, occasion) {
+  // Remove existing info box if present
+  const existingBox = document.getElementById('outfit-context-info');
+  if (existingBox) {
+    existingBox.remove();
+  }
+
+  // Create info box
+  const infoBox = document.createElement('div');
+  infoBox.id = 'outfit-context-info';
+  infoBox.style.cssText = `
+    margin-top: 1.5rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
+    border-radius: 0.75rem;
+    border: 2px solid #4CAF50;
+  `;
+
+  const weatherEmoji = weather.condition === 'cold' ? '❄️' :
+                      weather.condition === 'hot' ? '☀️' :
+                      weather.condition === 'warm' ? '🌤️' : '🌥️';
+
+  const seasonEmoji = weather.season === 'winter' ? '❄️' :
+                     weather.season === 'spring' ? '🌸' :
+                     weather.season === 'summer' ? '☀️' : '🍂';
+
+  const occasionEmoji = occasion === 'work' ? '💼' :
+                       occasion === 'formal' ? '🎩' :
+                       occasion === 'date' ? '💕' :
+                       occasion === 'gym' ? '🏋️' :
+                       occasion === 'beach' ? '🏖️' :
+                       occasion === 'party' ? '🎉' :
+                       occasion === 'outdoor' ? '🏕️' : '👕';
+
+  infoBox.innerHTML = `
+    <h3 style="margin: 0 0 1rem 0; color: #2E7D32; display: flex; align-items: center; gap: 0.5rem;">
+      <span>🤖</span> AI Outfit Context
+    </h3>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+      <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
+        <div style="font-size: 0.75rem; color: #666; margin-bottom: 0.25rem;">${occasionEmoji} Occasion</div>
+        <div style="font-weight: 600; text-transform: capitalize;">${occasion}</div>
+      </div>
+
+      <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
+        <div style="font-size: 0.75rem; color: #666; margin-bottom: 0.25rem;">📍 Location</div>
+        <div style="font-weight: 600;">London, UK</div>
+      </div>
+
+      <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
+        <div style="font-size: 0.75rem; color: #666; margin-bottom: 0.25rem;">📅 Date & Time</div>
+        <div style="font-weight: 600; font-size: 0.9rem;">${dateStr}</div>
+        <div style="font-size: 0.875rem; color: #666;">${timeStr}</div>
+      </div>
+
+      <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
+        <div style="font-size: 0.75rem; color: #666; margin-bottom: 0.25rem;">🌡️ Temperature</div>
+        <div style="font-weight: 600; font-size: 1.5rem;">${weather.temperature}°C</div>
+        <div style="font-size: 0.875rem; color: #666;">${weatherEmoji} ${weather.condition}</div>
+      </div>
+
+      <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
+        <div style="font-size: 0.75rem; color: #666; margin-bottom: 0.25rem;">🌦️ Conditions</div>
+        <div style="font-weight: 600;">${weather.weather}</div>
+        <div style="font-size: 0.875rem; color: #666;">${seasonEmoji} ${weather.season}</div>
+      </div>
+    </div>
+
+    <div style="background: white; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #4CAF50;">
+      <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">💬 AI Reasoning</div>
+      <p style="margin: 0; line-height: 1.6;">${suggestion.reasoning || 'AI selected items based on current weather conditions and season.'}</p>
+      ${suggestion.tips && suggestion.tips.length > 0 ? `
+        <div style="margin-top: 0.75rem;">
+          <div style="font-size: 0.75rem; color: #666; margin-bottom: 0.25rem;">💡 Style Tips</div>
+          <ul style="margin: 0; padding-left: 1.25rem; line-height: 1.8;">
+            ${suggestion.tips.map(tip => `<li style="font-size: 0.875rem;">${tip}</li>`).join('')}
+          </ul>
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  // Insert after the outfit canvas section
+  const canvasContainer = document.querySelector('.outfit-canvas').closest('.card');
+  canvasContainer.parentNode.insertBefore(infoBox, canvasContainer.nextSibling);
+
+  // Scroll to show the info
+  infoBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function showOutfitRefinementOptions() {
+  // Remove existing refinement box if present
+  const existingBox = document.getElementById('outfit-refinement-box');
+  if (existingBox) {
+    existingBox.remove();
+  }
+
+  const refinementBox = document.createElement('div');
+  refinementBox.id = 'outfit-refinement-box';
+  refinementBox.style.cssText = `
+    margin-top: 1rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #FFF5F4 0%, #FFE8E6 100%);
+    border-radius: 0.75rem;
+    border: 2px solid var(--primary);
+  `;
+
+  refinementBox.innerHTML = `
+    <h3 style="margin: 0 0 1rem 0; color: var(--primary); display: flex; align-items: center; gap: 0.5rem;">
+      <span>✨</span> Want to adjust this outfit?
+    </h3>
+
+    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem;">
+      <button class="btn btn-secondary" onclick="refineOutfit('different-color')" style="font-size: 0.875rem;">
+        🎨 Different Color
+      </button>
+      <button class="btn btn-secondary" onclick="refineOutfit('more-formal')" style="font-size: 0.875rem;">
+        👔 More Formal
+      </button>
+      <button class="btn btn-secondary" onclick="refineOutfit('more-casual')" style="font-size: 0.875rem;">
+        👕 More Casual
+      </button>
+      <button class="btn btn-secondary" onclick="refineOutfit('warmer')" style="font-size: 0.875rem;">
+        🧥 Add Layer
+      </button>
+      <button class="btn btn-secondary" onclick="refineOutfit('lighter')" style="font-size: 0.875rem;">
+        ☀️ Remove Layer
+      </button>
+    </div>
+
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+      <input type="text" id="custom-refinement-input" placeholder="Or describe what you'd like to change..."
+             style="flex: 1; padding: 0.75rem; border: 2px solid var(--border); border-radius: 0.5rem; font-size: 0.875rem;">
+      <button class="btn btn-primary" onclick="refineOutfitCustom()" style="white-space: nowrap;">
+        🤖 Ask AI
+      </button>
+    </div>
+  `;
+
+  // Insert after context info box
+  const contextBox = document.getElementById('outfit-context-info');
+  if (contextBox) {
+    contextBox.parentNode.insertBefore(refinementBox, contextBox.nextSibling);
+  }
+}
+
+async function refineOutfit(refinementType) {
+  if (!window.currentOutfitContext) {
+    showToast('No outfit to refine. Generate an outfit first!', 'error');
+    return;
+  }
+
+  const refinementMessages = {
+    'different-color': 'Use different colors',
+    'more-formal': 'Make it more formal',
+    'more-casual': 'Make it more casual',
+    'warmer': 'Add a warmer layer',
+    'lighter': 'Remove a layer, make it lighter'
+  };
+
+  const message = refinementMessages[refinementType];
+  await refineOutfitWithAI(message);
+}
+
+async function refineOutfitCustom() {
+  const input = document.getElementById('custom-refinement-input');
+  const message = input.value.trim();
+
+  if (!message) {
+    showToast('Please describe what you want to change', 'error');
+    return;
+  }
+
+  await refineOutfitWithAI(message);
+  input.value = '';
+}
+
+async function refineOutfitWithAI(refinementMessage) {
+  const ctx = window.currentOutfitContext;
+
+  showProcessingModal(`🤖 Refining outfit: "${refinementMessage}"...`);
+
+  try {
+    const currentItems = ctx.selectedItems.map(id => {
+      const item = ctx.allItems.find(i => i.id === id);
+      return item ? `${item.name} (${item.category}, ${item.color})` : '';
+    }).filter(Boolean).join(', ');
+
+    const prompt = `Current outfit: ${currentItems}
+
+User request: ${refinementMessage}
+
+Occasion: ${ctx.occasion}
+Weather: ${ctx.weather.condition}, ${ctx.weather.weather}, ${ctx.weather.season}
+
+Available items (${ctx.allItems.length}):
+${ctx.allItems.map(item => `- ID ${item.id}: ${item.name} (${item.category}, ${item.color})${item.tags && item.tags.length ? ' [' + item.tags.join(', ') + ']' : ''}`).join('\n')}
+
+Select new items for the outfit based on the user's request. Follow the same rules:
+- ONE top, ONE bottom, ONE pair of shoes
+- OPTIONAL outerwear if needed
+- OPTIONAL 1-2 accessories
+- Match colors, weather, and occasion
+
+Respond with JSON:
+{
+  "selected_items": [1, 5, 7],
+  "reasoning": "What changed and why",
+  "tips": ["Tip 1", "Tip 2"]
+}`;
+
+    const response = await fetch('http://localhost:8556/api/suggest-outfit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        occasion: ctx.occasion,
+        weather: `${ctx.weather.condition}, ${ctx.weather.weather}, ${ctx.weather.season}. User wants: ${refinementMessage}`,
+        items: ctx.allItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          color: item.color,
+          brand: item.brand || '',
+          tags: item.tags || []
+        }))
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to refine outfit');
+    }
+
+    const suggestion = await response.json();
+    closeModal();
+
+    if (!suggestion || !suggestion.selected_items || suggestion.selected_items.length === 0) {
+      showToast('AI could not refine the outfit', 'error');
+      return;
+    }
+
+    // Clear current items from canvas
+    currentOutfitItems.forEach(item => {
+      const element = document.querySelector(`.canvas-item[data-item-id="${item.id}"]`);
+      if (element) element.remove();
+    });
+    currentOutfitItems = [];
+
+    // Add new suggested items
+    for (const itemId of suggestion.selected_items) {
+      const item = ctx.allItems.find(i => i.id === itemId);
+      if (item) {
+        const canvasItem = {
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          image: item.image_url,
+          color: item.color,
+          brand: item.brand
+        };
+        addToCanvas(canvasItem);
+      }
+    }
+
+    // Update context
+    ctx.selectedItems = suggestion.selected_items;
+    ctx.reasoning = suggestion.reasoning;
+
+    // Update info display
+    displayWeatherInfo(ctx.weather, new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+                      new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+                      suggestion, ctx.occasion);
+
+    showToast('✨ Outfit refined! Now positioning...', 'success');
+
+    // Position items
+    setTimeout(async () => {
+      await positionItemsWithAI();
+    }, 1500);
+
+  } catch (error) {
+    closeModal();
+    console.error('Refinement error:', error);
+    showToast('Error refining outfit: ' + error.message, 'error');
+  }
+}
+
+async function positionItemsWithAI() {
+  const canvas = document.querySelector('.outfit-canvas');
+  const bodyBg = canvas?.style.backgroundImage;
 
   // Extract the data URL from backgroundImage
   const match = bodyBg.match(/url\("?(.+?)"?\)/);
@@ -1309,80 +1835,144 @@ function confirmSaveOutfit() {
 // ITEM DETAIL PAGE
 // ============================================================================
 
-function initItemDetail() {
+async function initItemDetail() {
   const container = document.getElementById('item-detail');
   if (!container) return;
 
   const params = new URLSearchParams(window.location.search);
-  const itemId = parseInt(params.get('id'));
+  const itemId = params.get('id');
 
-  const item = appData.items.find(i => i.id === itemId);
-  if (!item) {
-    showToast('Item not found. Redirecting to wardrobe...', 'error');
+  if (!itemId) {
+    showToast('No item ID provided. Redirecting to wardrobe...', 'error');
     setTimeout(() => {
       window.location.href = 'wardrobe.html';
     }, 2000);
     return;
   }
 
-  // Populate form
-  document.getElementById('item-name').value = item.name || '';
-  document.getElementById('item-category').value = item.category || 'Uncategorized';
-  document.getElementById('item-price').value = item.price || 0;
-  document.getElementById('item-brand').value = item.brand || '';
-  document.getElementById('item-color').value = item.color || '';
-  document.getElementById('item-image-preview').src = item.image;
-
-  // Show tags if present
-  if (item.tags && item.tags.length > 0) {
-    const tagsSection = document.getElementById('tags-section');
-    const tagsContainer = document.getElementById('item-tags');
-    if (tagsSection && tagsContainer) {
-      tagsSection.style.display = 'block';
-      renderTags(tagsContainer, item.tags);
+  // Fetch item from API
+  try {
+    const response = await fetch(`http://localhost:8556/api/items/${itemId}`);
+    if (!response.ok) {
+      throw new Error('Item not found');
     }
-  }
 
-  // Show AI analysis if present
-  if (item.aiAnalysis) {
-    const analysisSection = document.getElementById('ai-analysis-section');
-    const analysisText = document.getElementById('ai-analysis-text');
-    if (analysisSection && analysisText) {
-      analysisSection.style.display = 'block';
-      analysisText.textContent = item.aiAnalysis;
+    const item = await response.json();
+
+    // Populate form
+    document.getElementById('item-name').value = item.name || '';
+    document.getElementById('item-category').value = item.category || 'Uncategorized';
+    document.getElementById('item-price').value = item.price || 0;
+    document.getElementById('item-brand').value = item.brand || '';
+    document.getElementById('item-color').value = item.color || '';
+    document.getElementById('item-image-preview').src = item.image_url;
+
+    // Show tags if present
+    if (item.tags && item.tags.length > 0) {
+      const tagsSection = document.getElementById('tags-section');
+      const tagsContainer = document.getElementById('item-tags');
+      if (tagsSection && tagsContainer) {
+        tagsSection.style.display = 'block';
+        renderTags(tagsContainer, item.tags);
+      }
     }
-  }
 
-  // Setup enhance brand button (uses 13b model)
-  const enhanceBrandBtn = document.getElementById('enhance-brand-btn');
-  if (enhanceBrandBtn) {
-    enhanceBrandBtn.onclick = async () => {
-      if (!aiAvailable) {
-        showToast('AI not available. Start the API server.', 'error');
-        return;
+    // Show AI analysis if present
+    if (item.ai_analysis) {
+      const analysisSection = document.getElementById('ai-analysis-section');
+      const analysisText = document.getElementById('ai-analysis-text');
+      if (analysisSection && analysisText) {
+        analysisSection.style.display = 'block';
+        analysisText.textContent = item.ai_analysis;
       }
+    }
 
-      enhanceBrandBtn.disabled = true;
-      enhanceBrandBtn.textContent = '⏳ Analyzing (2-3 min)...';
+    // Setup enhance brand button (uses 13b model)
+    const enhanceBrandBtn = document.getElementById('enhance-brand-btn');
+    if (enhanceBrandBtn) {
+      enhanceBrandBtn.onclick = async () => {
+        if (!aiAvailable) {
+          showToast('AI not available. Start the API server.', 'error');
+          return;
+        }
 
-      // Use llava:13b for better brand detection
-      const aiResult = await analyzeImageWithAI(item.image, 'llava:13b');
+        enhanceBrandBtn.disabled = true;
+        enhanceBrandBtn.textContent = '⏳ Reading text with AI...';
 
-      if (aiResult && aiResult.brand) {
-        document.getElementById('item-brand').value = aiResult.brand;
-        showToast(`Brand detected: ${aiResult.brand}`, 'success');
+        try {
+          // Convert image URL to base64 if needed
+          let imageData = item.image_url;
+          if (!imageData.startsWith('data:')) {
+            // Fetch image and convert to base64
+            const imgResponse = await fetch(imageData);
+            const blob = await imgResponse.blob();
+            imageData = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+          }
 
-        // Auto-save the brand
-        item.brand = aiResult.brand;
-        saveData(appData);
-      } else {
-        showToast('Could not detect brand. Try manually entering it.', 'error');
-      }
+          // Use deepseek-ocr or qwen2-vl:7b for better text/brand detection
+          const brandPrompt = `Carefully examine this clothing item image and read ALL visible text.
 
-      enhanceBrandBtn.disabled = false;
-      enhanceBrandBtn.textContent = '✨ Detect with AI (13b)';
-    };
-  }
+Focus on:
+1. Clothing labels (neck tags, waistband tags, sleeve tags)
+2. Printed text on the garment
+3. Woven labels
+4. Care labels
+5. Any visible brand names, logos, or text
+
+List every piece of text you can see in the image, especially brand names. Pay close attention to labels and tags.
+
+Respond with JSON:
+{"brand": "BRAND_NAME_HERE", "all_text": ["text1", "text2", "text3"], "description": "brief description", "category": "category", "color": "color", "tags": ["tag1", "tag2"]}
+
+If you see a brand name, put it in the "brand" field. List ALL visible text in "all_text".`;
+
+          // Try deepseek-ocr first (best for text), fallback to qwen2-vl:7b, then llava:13b
+          let modelToUse = 'deepseek-ocr:latest';
+          console.log('Attempting brand detection with:', modelToUse);
+
+          const aiResult = await analyzeImageWithAI(imageData, modelToUse, brandPrompt);
+
+          console.log('Brand detection result:', aiResult);
+
+          if (aiResult) {
+            // Log all detected text for debugging
+            if (aiResult.all_text) {
+              console.log('All detected text:', aiResult.all_text);
+            }
+
+            if (aiResult.brand) {
+              document.getElementById('item-brand').value = aiResult.brand;
+              const allTextInfo = aiResult.all_text ? ` (Found text: ${aiResult.all_text.join(', ')})` : '';
+              showToast(`Brand detected: ${aiResult.brand}${allTextInfo}`, 'success');
+
+              // Update via API
+              await fetch(`http://localhost:8556/api/items/${itemId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: item.name, category: item.category, price: item.price, brand: aiResult.brand, color: item.color })
+              });
+            } else {
+              const textFound = aiResult.all_text && aiResult.all_text.length > 0
+                ? `Text found: ${aiResult.all_text.join(', ')}. `
+                : '';
+              showToast(`${textFound}Could not detect brand name. Check console for details.`, 'error');
+            }
+          } else {
+            showToast('AI analysis failed. Try manually entering brand.', 'error');
+          }
+        } catch (error) {
+          console.error('Brand detection error:', error);
+          showToast('Error detecting brand: ' + error.message, 'error');
+        }
+
+        enhanceBrandBtn.disabled = false;
+        enhanceBrandBtn.textContent = '✨ Detect with AI (OCR)';
+      };
+    }
 
   // Setup regenerate tags button
   const regenBtn = document.getElementById('regenerate-tags-btn');
@@ -1505,6 +2095,13 @@ function initItemDetail() {
       }
     };
   }
+  } catch (error) {
+    console.error('Load item error:', error);
+    showToast('Item not found. Redirecting to wardrobe...', 'error');
+    setTimeout(() => {
+      window.location.href = 'wardrobe.html';
+    }, 2000);
+  }
 }
 
 function displayStyleMatches(matchingItems) {
@@ -1556,43 +2153,60 @@ function renderTags(container, tags) {
   ).join('');
 }
 
-function saveItem(itemId) {
-  const item = appData.items.find(i => i.id === itemId);
-  if (!item) return;
+async function saveItem(itemId) {
+  const updatedItem = {
+    name: document.getElementById('item-name').value,
+    category: document.getElementById('item-category').value,
+    price: parseFloat(document.getElementById('item-price').value) || 0,
+    brand: document.getElementById('item-brand').value,
+    color: document.getElementById('item-color').value,
+  };
 
-  item.name = document.getElementById('item-name').value;
-  item.category = document.getElementById('item-category').value;
-  item.price = parseFloat(document.getElementById('item-price').value) || 0;
-  item.brand = document.getElementById('item-brand').value;
-  item.color = document.getElementById('item-color').value;
+  try {
+    const response = await fetch(`http://localhost:8556/api/items/${itemId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedItem)
+    });
 
-  saveData(appData);
-  showToast('Item saved!', 'success');
+    if (!response.ok) {
+      throw new Error('Failed to update item');
+    }
 
-  setTimeout(() => {
-    window.location.href = 'wardrobe.html';
-  }, 1000);
+    showToast('Item saved!', 'success');
+
+    setTimeout(() => {
+      window.location.href = 'wardrobe.html';
+    }, 1000);
+  } catch (error) {
+    console.error('Save error:', error);
+    showToast('Error saving item: ' + error.message, 'error');
+  }
 }
 
-function deleteItem(itemId) {
+async function deleteItem(itemId) {
   if (!confirm('Are you sure you want to delete this item? This cannot be undone.')) {
     return;
   }
 
-  appData.items = appData.items.filter(i => i.id !== itemId);
+  try {
+    const response = await fetch(`http://localhost:8556/api/items/${itemId}`, {
+      method: 'DELETE'
+    });
 
-  // Also remove from outfits
-  appData.outfits.forEach(outfit => {
-    outfit.itemIds = outfit.itemIds.filter(id => id !== itemId);
-    outfit.positions = outfit.positions.filter(p => p.id !== itemId);
-  });
+    if (!response.ok) {
+      throw new Error('Failed to delete item');
+    }
 
-  saveData(appData);
-  showToast('Item deleted', 'success');
+    showToast('Item deleted', 'success');
 
-  setTimeout(() => {
-    window.location.href = 'wardrobe.html';
-  }, 500);
+    setTimeout(() => {
+      window.location.href = 'wardrobe.html';
+    }, 500);
+  } catch (error) {
+    console.error('Delete error:', error);
+    showToast('Error deleting item: ' + error.message, 'error');
+  }
 }
 
 function logWear(itemId) {
@@ -2840,8 +3454,10 @@ function addToCanvasAtPosition(item, x, y, z) {
   canvasItem.style.zIndex = z;
 
   canvasItem.innerHTML = `
-    <img src="${item.image}" alt="${item.name}" draggable="false">
+    <img src="${item.image}" alt="${item.name}" draggable="false" style="width: 100%; height: 100%; object-fit: contain;">
     <div class="canvas-item-controls">
+      <button onclick="resizeCanvasItem(this.closest('.canvas-item'), 'bigger')" title="Make bigger">+</button>
+      <button onclick="resizeCanvasItem(this.closest('.canvas-item'), 'smaller')" title="Make smaller">−</button>
       <button onclick="bringForward(this.closest('.canvas-item'))" title="Bring forward">↑</button>
       <button onclick="sendBackward(this.closest('.canvas-item'))" title="Send backward">↓</button>
       <button onclick="removeFromCanvas(${item.id})" title="Remove">×</button>
@@ -3285,15 +3901,6 @@ window.renderSharedOutfit = renderSharedOutfit;
 // ============================================================================
 
 async function retryAIAnalysis(itemId) {
-  const item = appData.items.find(i => i.id === itemId);
-  if (!item) {
-    showToast('Item not found. Redirecting to wardrobe...', 'error');
-    setTimeout(() => {
-      window.location.href = 'wardrobe.html';
-    }, 2000);
-    return;
-  }
-
   if (!aiAvailable) {
     showToast('AI not available. Start the API server.', 'error');
     return;
@@ -3302,24 +3909,53 @@ async function retryAIAnalysis(itemId) {
   showToast('⏳ Analyzing image with AI...', 'info');
 
   try {
-    const analysis = await analyzeImageWithAI(item.image);
-    
+    // Fetch item from API
+    const response = await fetch(`http://localhost:8556/api/items/${itemId}`);
+    if (!response.ok) {
+      throw new Error('Item not found');
+    }
+    const item = await response.json();
+
+    // Convert image URL to base64 if needed
+    let imageData = item.image_url;
+    if (!imageData.startsWith('data:')) {
+      const imgResponse = await fetch(imageData);
+      const blob = await imgResponse.blob();
+      imageData = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    const analysis = await analyzeImageWithAI(imageData);
+
     if (analysis) {
-      // Update item with AI analysis
-      item.aiAnalysis = analysis.description || 'AI analysis completed';
-      if (analysis.category) item.category = analysis.category;
-      if (analysis.color) item.color = analysis.color;
-      if (analysis.brand) item.brand = analysis.brand;
-      if (analysis.tags && analysis.tags.length > 0) item.tags = analysis.tags;
-      
+      // Prepare updated item data
+      const updatedItem = {
+        name: item.name,
+        category: analysis.category || item.category,
+        price: item.price,
+        color: analysis.color || item.color,
+        brand: analysis.brand || item.brand,
+        ai_analysis: analysis.description || 'AI analysis completed',
+        tags: (analysis.tags && analysis.tags.length > 0) ? analysis.tags : item.tags
+      };
+
       // Update name if it's still default
       if (item.name === 'Unnamed Item' && analysis.description) {
-        item.name = analysis.description.substring(0, 50);
+        updatedItem.name = analysis.description.substring(0, 50);
       }
 
-      saveData(appData);
+      // Update via API
+      await fetch(`http://localhost:8556/api/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedItem)
+      });
+
       showToast('✅ AI analysis completed!', 'success');
-      
+
       // Reload the page to show updated info
       setTimeout(() => {
         window.location.reload();

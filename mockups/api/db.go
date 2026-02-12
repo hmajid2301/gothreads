@@ -62,8 +62,8 @@ func handleListItems(w http.ResponseWriter, r *http.Request) {
 			"name":       name,
 			"category":   category,
 			"price":      price,
-			"image":      imageURL,
-			"wearCount":  wearCount,
+			"image_url":  imageURL,
+			"wear_count": wearCount,
 		}
 
 		if brand != nil {
@@ -73,7 +73,7 @@ func handleListItems(w http.ResponseWriter, r *http.Request) {
 			item["color"] = *color
 		}
 		if aiAnalysis != nil {
-			item["aiAnalysis"] = *aiAnalysis
+			item["ai_analysis"] = *aiAnalysis
 		}
 		if tags != nil {
 			item["tags"] = tags
@@ -83,9 +83,7 @@ func handleListItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"items": items,
-	})
+	json.NewEncoder(w).Encode(items)
 }
 
 // GET /api/items/:id - Get single item
@@ -117,12 +115,12 @@ func handleGetItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item := map[string]interface{}{
-		"id":        id,
-		"name":      name,
-		"category":  category,
-		"price":     price,
-		"image":     imageURL,
-		"wearCount": wearCount,
+		"id":         id,
+		"name":       name,
+		"category":   category,
+		"price":      price,
+		"image_url":  imageURL,
+		"wear_count": wearCount,
 	}
 
 	if brand != nil {
@@ -138,7 +136,7 @@ func handleGetItem(w http.ResponseWriter, r *http.Request) {
 		item["notes"] = *notes
 	}
 	if aiAnalysis != nil {
-		item["aiAnalysis"] = *aiAnalysis
+		item["ai_analysis"] = *aiAnalysis
 	}
 	if tags != nil {
 		item["tags"] = tags
@@ -159,9 +157,9 @@ func handleCreateItem(w http.ResponseWriter, r *http.Request) {
 		Brand      string   `json:"brand"`
 		Color      string   `json:"color"`
 		Season     string   `json:"season"`
-		ImageURL   string   `json:"image"`
+		ImageURL   string   `json:"image_url"`
 		Notes      string   `json:"notes"`
-		AIAnalysis string   `json:"aiAnalysis"`
+		AIAnalysis string   `json:"ai_analysis"`
 		Tags       []string `json:"tags"`
 	}
 

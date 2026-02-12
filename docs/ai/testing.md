@@ -366,10 +366,10 @@
   Core Features:
   - [x] Multi-image upload works
   - [x] Background removal works
-  - [ ] AI detects category/color/brand
+  - [x] AI detects category/color/brand
   - [ ] Enhanced brand detection (13b) works
-  - [ ] Mannequin auto-loads
-  - [ ] Items can be added to canvas
+  - [x] Mannequin auto-loads
+  - [x] Items can be added to canvas
   - [ ] "Dress with AI" positions items correctly
   - [ ] Proper layering (outerwear over tops)
   - [ ] Outfit rating provides feedback
@@ -379,7 +379,7 @@
   - [ ] Wardrobe gaps analysis complete
   - [ ] Can upload custom body photo
   - [ ] Can reset to mannequin
-  - [ ] Clear all resets canvas
+  - [x] Clear all resets canvas
   - [ ] Data persists across pages
   - [ ] All pages navigate correctly
 

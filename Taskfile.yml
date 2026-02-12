@@ -232,16 +232,16 @@ tasks:
 
   # Mockup tasks
   "mockups:services":
-    desc: Start required services for mockups (postgres, rembg, ollama)
+    desc: Start required services for mockups (postgres, rembg)
     cmds:
-      - docker compose up -d postgres rembg ollama
+      - docker compose up -d postgres rembg
       - echo "⏳ Waiting for services to be ready..."
       - sleep 5
       - echo "✅ Services started"
 
   "mockups:dev":
-    desc: Start mockup server with AI features (port 8556)
+    desc: Start mockup server with AI features and hot reload (port 8556)
     dir: "{{.MOCKUPS_DIR}}/api"
     cmds:
       - task: mockups:services
-      - go run .
+      - air

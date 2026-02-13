@@ -232,6 +232,8 @@ h1, h2, h3 {
 
 .canvas-item {
   position: absolute;
+  width: 120px;
+  height: 120px;
   cursor: move;
   user-select: none;
   transition: box-shadow 0.2s;
@@ -242,8 +244,9 @@ h1, h2, h3 {
 }
 
 .canvas-item img {
-  max-width: 150px;
-  max-height: 150px;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   pointer-events: none;
 }
 
@@ -860,5 +863,19 @@ textarea:focus {
   bottom: 100px;
   right: 2rem;
   z-index: 999;
+}
+
+/* AI Job Notification Panel */
+@keyframes notifSlideIn {
+  from { opacity: 0; transform: translateX(100px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (max-width: 768px) {
+  #ai-job-notifications {
+    width: calc(100vw - 2rem) !important;
+    right: 1rem !important;
+    bottom: 4rem !important;
+  }
 }
 

@@ -15,7 +15,6 @@
         <a href="wardrobe.html" class="active">Wardrobe</a>
         <a href="upload.html">Upload</a>
         <a href="outfits.html">Outfits</a>
-        <a href="ai-stylist.html">AI Stylist</a>
         <a href="analytics.html">Analytics</a>
         <a href="settings.html">Settings</a>
       </nav>
@@ -39,6 +38,17 @@
         </div>
       </div>
 
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <h2>👗 Wardrobe Analysis</h2>
+        <p style="color: var(--text-neutral); margin-bottom: 1rem;">
+          Get a complete analysis of your wardrobe: what you have, what's missing, and personalized recommendations.
+        </p>
+        <button id="analyze-wardrobe-btn" class="btn btn-primary" style="width: 100%;">
+          🔍 Analyze My Wardrobe
+        </button>
+        <div id="wardrobe-analysis-result" style="display: none; margin-top: 1.5rem;"></div>
+      </div>
+
       <div class="grid grid-4" id="wardrobe-grid">
         <!-- Populated by JavaScript -->
       </div>
@@ -49,5 +59,10 @@
   <button class="voice-input-btn floating-voice-btn" onclick="startVoiceInput()" title="Voice commands: 'Show my tops', 'Create outfit', etc.">🎤</button>
 
   <script src="js/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      initAIStylist();
+    });
+  </script>
 </body>
 </html>

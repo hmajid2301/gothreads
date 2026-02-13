@@ -5,7 +5,9 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,22 +17,71 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/gofrs/uuid/v5"
+	"github.com/joho/godotenv"
 )
 
 const (
-	defaultOllamaURL   = "http://localhost:11434"
-	defaultVisionModel = "llava:7b"
-	defaultTextModel   = "llama3.2:3b"
-	defaultRembgURL    = "http://localhost:5000"
+	defaultOllamaURL         = "http://localhost:11434"
+	defaultVisionModel       = "llava:7b"
+	defaultTextModel         = "llama3.2:3b"
+	defaultSpatialModelLocal = "qwen3-vl:8b"
+	defaultSpatialModelCloud = "qwen3-vl:235b-cloud"
+	defaultTextModelCloud    = "deepseek-v3.1:671b-cloud"
+	defaultRembgURL          = "http://localhost:5000"
+	defaultFashnSpaceURL     = "https://fashn-ai-fashn-vton-1-5.hf.space"
+	defaultCatvtonLocalURL   = "http://localhost:8557"
 )
 
 var (
-	ollamaURL   = getEnv("OLLAMA_URL", defaultOllamaURL)
-	visionModel = getEnv("OLLAMA_VISION_MODEL", defaultVisionModel)
-	textModel   = getEnv("OLLAMA_TEXT_MODEL", defaultTextModel)
-	rembgURL    = getEnv("REMBG_URL", defaultRembgURL)
+	ollamaURL      string
+	ollamaCloud    bool
+	visionModel    string
+	textModel      string
+	cloudTextModel string
+	spatialModel   string
+	rembgURL          string
+	fashnSpaceURL     string
+	catvtonLocalURL   string
 )
+
+func init() {
+	// Load .env before reading env vars
+	_ = godotenv.Load()
+
+	ollamaURL = getEnv("OLLAMA_URL", defaultOllamaURL)
+	visionModel = getEnv("OLLAMA_VISION_MODEL", defaultVisionModel)
+	textModel = getEnv("OLLAMA_TEXT_MODEL", defaultTextModel)
+	rembgURL = getEnv("REMBG_URL", defaultRembgURL)
+	fashnSpaceURL = getEnv("FASHN_SPACE_URL", defaultFashnSpaceURL)
+	catvtonLocalURL = getEnv("CATVTON_LOCAL_URL", defaultCatvtonLocalURL)
+
+	// Detect cloud models by checking if they're pulled in Ollama
+	ollamaCloud = isModelAvailable(defaultSpatialModelCloud) || isModelAvailable(defaultTextModelCloud)
+
+	defaultSpatial := defaultSpatialModelLocal
+	defaultCloudText := textModel
+	if ollamaCloud {
+		defaultSpatial = defaultSpatialModelCloud
+		defaultCloudText = defaultTextModelCloud
+	}
+	spatialModel = getEnv("OLLAMA_SPATIAL_MODEL", defaultSpatial)
+	cloudTextModel = getEnv("OLLAMA_CLOUD_TEXT_MODEL", defaultCloudText)
+}
+
+// isModelAvailable checks if a model is pulled in Ollama
+func isModelAvailable(model string) bool {
+	resp, err := http.Post(ollamaURL+"/api/show", "application/json",
+		bytes.NewReader([]byte(fmt.Sprintf(`{"name":"%s"}`, model))))
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
 
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
@@ -53,6 +104,67 @@ type OllamaResponse struct {
 	Done     bool   `json:"done"`
 }
 
+// ============================================================================
+// OLLAMA CHAT API TYPES (for tool calling via /api/chat)
+// ============================================================================
+
+// OllamaChatMessage represents a single message in the chat conversation
+type OllamaChatMessage struct {
+	Role      string           `json:"role"`                 // system, user, assistant, tool
+	Content   string           `json:"content"`
+	ToolCalls []OllamaToolCall `json:"tool_calls,omitempty"` // only in assistant messages
+}
+
+// OllamaToolCall represents a tool call from the AI
+type OllamaToolCall struct {
+	Function OllamaFunctionCall `json:"function"`
+}
+
+// OllamaFunctionCall contains the function name and arguments
+type OllamaFunctionCall struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+// OllamaToolDef defines a tool the AI can call
+type OllamaToolDef struct {
+	Type     string            `json:"type"` // "function"
+	Function OllamaFunctionDef `json:"function"`
+}
+
+// OllamaFunctionDef describes a function's name, description, and parameters
+type OllamaFunctionDef struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Parameters  map[string]interface{} `json:"parameters"`
+}
+
+// OllamaChatRequest is the request format for /api/chat
+type OllamaChatRequest struct {
+	Model    string              `json:"model"`
+	Messages []OllamaChatMessage `json:"messages"`
+	Tools    []OllamaToolDef     `json:"tools,omitempty"`
+	Stream   bool                `json:"stream"`
+}
+
+// OllamaChatResponse is the response from /api/chat
+type OllamaChatResponse struct {
+	Message OllamaChatMessage `json:"message"`
+	Done    bool              `json:"done"`
+}
+
+// ChatRequest for AI chat with tool calling
+type ChatRequest struct {
+	Message string              `json:"message"`           // user's message
+	History []OllamaChatMessage `json:"history,omitempty"` // previous conversation
+}
+
+// ChatResponse returned to frontend
+type ChatResponse struct {
+	Message   string `json:"message"`    // AI's text response
+	ToolsUsed int    `json:"tools_used"` // how many tool calls were made
+}
+
 // AnalyzeRequest is what the frontend sends
 type AnalyzeRequest struct {
 	Image  string `json:"image"`  // base64 encoded image (with or without data URI prefix)
@@ -62,6 +174,7 @@ type AnalyzeRequest struct {
 
 // AnalyzeResponse is what we send back to frontend
 type AnalyzeResponse struct {
+	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Category    string   `json:"category"`
 	Color       string   `json:"color"`
@@ -88,6 +201,130 @@ type RemoveBgRequest struct {
 // RemoveBgResponse returns image with background removed
 type RemoveBgResponse struct {
 	Image string `json:"image"` // base64 encoded image with transparent background
+}
+
+// TryOnRequest for virtual try-on
+type TryOnRequest struct {
+	PersonImage  string `json:"person_image"`  // base64 encoded person image
+	GarmentImage string `json:"garment_image"` // base64 encoded garment image
+	ClothType    string `json:"cloth_type"`     // upper, lower, overall
+}
+
+// TryOnResponse returns the try-on result
+type TryOnResponse struct {
+	Image string `json:"image"` // base64 encoded result image
+}
+
+// AIJob represents any async AI operation
+type AIJob struct {
+	ID        string          `json:"id"`
+	Type      string          `json:"type"`    // analyze, tags, dress, remove-bg, tryon, suggest-outfit, color-match, style-match, rate-outfit, wardrobe-gaps
+	Status    string          `json:"status"`  // queued, processing, complete, failed, cancelled
+	Message   string          `json:"message"`
+	Result    json.RawMessage `json:"result,omitempty"`
+	Error     string          `json:"error,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+	cancel    context.CancelFunc
+	mu        sync.RWMutex
+	listeners []chan AIJobEvent
+}
+
+// AIJobEvent is sent to SSE listeners
+type AIJobEvent struct {
+	Event string // status, result, error
+	Data  string
+}
+
+// AIJobSubmitRequest is what the frontend sends to create a job
+type AIJobSubmitRequest struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+var (
+	aiJobs   = make(map[string]*AIJob)
+	aiJobsMu sync.RWMutex
+)
+
+func generateJobID() string {
+	return uuid.Must(uuid.NewV4()).String()
+}
+
+func (j *AIJob) updateStatus(status, message string) {
+	j.mu.Lock()
+	j.Status = status
+	j.Message = message
+	listeners := make([]chan AIJobEvent, len(j.listeners))
+	copy(listeners, j.listeners)
+	j.mu.Unlock()
+
+	log.Printf("🤖 Job %s [%s]: [%s] %s", j.ID[:8], j.Type, status, message)
+
+	for _, ch := range listeners {
+		select {
+		case ch <- AIJobEvent{Event: "status", Data: message}:
+		default:
+		}
+	}
+}
+
+func (j *AIJob) complete(result interface{}) {
+	resultJSON, _ := json.Marshal(result)
+	j.mu.Lock()
+	j.Status = "complete"
+	j.Result = resultJSON
+	j.Message = "Complete"
+	listeners := make([]chan AIJobEvent, len(j.listeners))
+	copy(listeners, j.listeners)
+	j.mu.Unlock()
+
+	log.Printf("🤖 Job %s [%s]: complete", j.ID[:8], j.Type)
+
+	for _, ch := range listeners {
+		select {
+		case ch <- AIJobEvent{Event: "result", Data: string(resultJSON)}:
+		default:
+		}
+	}
+}
+
+func (j *AIJob) fail(errMsg string) {
+	j.mu.Lock()
+	j.Status = "failed"
+	j.Error = errMsg
+	j.Message = errMsg
+	listeners := make([]chan AIJobEvent, len(j.listeners))
+	copy(listeners, j.listeners)
+	j.mu.Unlock()
+
+	log.Printf("🤖 Job %s [%s]: failed - %s", j.ID[:8], j.Type, errMsg)
+
+	for _, ch := range listeners {
+		select {
+		case ch <- AIJobEvent{Event: "error", Data: errMsg}:
+		default:
+		}
+	}
+}
+
+func (j *AIJob) addListener() chan AIJobEvent {
+	ch := make(chan AIJobEvent, 10)
+	j.mu.Lock()
+	j.listeners = append(j.listeners, ch)
+	j.mu.Unlock()
+	return ch
+}
+
+func (j *AIJob) removeListener(ch chan AIJobEvent) {
+	j.mu.Lock()
+	for i, l := range j.listeners {
+		if l == ch {
+			j.listeners = append(j.listeners[:i], j.listeners[i+1:]...)
+			break
+		}
+	}
+	j.mu.Unlock()
+	close(ch)
 }
 
 // SuggestOutfitRequest for AI outfit recommendations
@@ -145,11 +382,13 @@ type RateOutfitRequest struct {
 
 // RateOutfitResponse returns outfit rating and feedback
 type RateOutfitResponse struct {
-	Rating      int      `json:"rating"`      // 0-10
-	Feedback    string   `json:"feedback"`    // Overall feedback
-	Strengths   []string `json:"strengths"`   // What works well
-	Improvements []string `json:"improvements"` // What could be better
-	RawResponse string   `json:"raw_response,omitempty"`
+	Rating        int      `json:"rating"`         // 0-10
+	Feedback      string   `json:"feedback"`       // Overall feedback
+	Strengths     []string `json:"strengths"`      // What works well
+	Improvements  []string `json:"improvements"`   // What could be better
+	ColorScore    int      `json:"color_score"`    // 0-100 color harmony score
+	ColorAnalysis string   `json:"color_analysis"` // Color coordination feedback
+	RawResponse   string   `json:"raw_response,omitempty"`
 }
 
 // WardrobeGapsRequest for analyzing wardrobe
@@ -227,16 +466,12 @@ func main() {
 
 	// API endpoints (prefixed to avoid conflicts with static files)
 	mux.HandleFunc("GET /api/health", handleHealth)
-	mux.HandleFunc("POST /api/analyze", handleAnalyze)
-	mux.HandleFunc("POST /api/tags", handleTags)
-	mux.HandleFunc("POST /api/dress", handleDress)
-	mux.HandleFunc("POST /api/remove-bg", handleRemoveBg)
-	mux.HandleFunc("POST /api/suggest-outfit", handleSuggestOutfit)
-	mux.HandleFunc("POST /api/color-match", handleColorMatch)
-	mux.HandleFunc("POST /api/style-match", handleStyleMatch)
-	mux.HandleFunc("POST /api/rate-outfit", handleRateOutfit)
-	mux.HandleFunc("POST /api/wardrobe-gaps", handleWardrobeGaps)
 	mux.HandleFunc("GET /api/status", handleStatus)
+
+	// Generic async AI job queue (replaces all sync AI endpoints)
+	mux.HandleFunc("POST /api/ai/jobs", handleAIJobSubmit)
+	mux.HandleFunc("GET /api/ai/jobs/{id}", handleAIJobStatus)
+	mux.HandleFunc("DELETE /api/ai/jobs/{id}", handleAIJobCancel)
 
 	// Database CRUD endpoints
 	mux.HandleFunc("GET /api/items", handleListItems)
@@ -244,6 +479,22 @@ func main() {
 	mux.HandleFunc("POST /api/items", handleCreateItem)
 	mux.HandleFunc("PUT /api/items/{id}", handleUpdateItem)
 	mux.HandleFunc("DELETE /api/items/{id}", handleDeleteItem)
+
+	// Outfit CRUD endpoints
+	mux.HandleFunc("GET /api/outfits", handleListOutfits)
+	mux.HandleFunc("GET /api/outfits/{id}", handleGetOutfit)
+	mux.HandleFunc("POST /api/outfits", handleCreateOutfit)
+	mux.HandleFunc("PUT /api/outfits/{id}", handleUpdateOutfit)
+	mux.HandleFunc("DELETE /api/outfits/{id}", handleDeleteOutfit)
+
+	// Calendar endpoints
+	mux.HandleFunc("GET /api/calendar", handleListCalendarEvents)
+	mux.HandleFunc("POST /api/calendar", handleUpsertCalendarEvent)
+	mux.HandleFunc("DELETE /api/calendar/{date}", handleDeleteCalendarEvent)
+
+	// Wear history endpoints
+	mux.HandleFunc("POST /api/wear", handleLogWear)
+	mux.HandleFunc("GET /api/wear", handleGetWearHistory)
 
 	// S3 upload endpoint
 	mux.HandleFunc("POST /api/upload", handleS3Upload)
@@ -257,9 +508,34 @@ func main() {
 	log.Printf("🤖 Ollama URL: %s", ollamaURL)
 	log.Printf("👁️  Vision model: %s", visionModel)
 	log.Printf("📝 Text model: %s", textModel)
+	if ollamaCloud {
+		log.Printf("☁️  Ollama Cloud models detected")
+	}
+	log.Printf("📐 Spatial model: %s", spatialModel)
+	log.Printf("💬 Cloud text model: %s", cloudTextModel)
 	log.Printf("🖼️  Rembg URL: %s", rembgURL)
+	log.Printf("🧥 FASHN VTON HF Space: %s", fashnSpaceURL)
+	log.Printf("🧥 CatVTON Local fallback: %s", catvtonLocalURL)
 	log.Printf("")
 	log.Printf("Open http://localhost:%s/upload.html to test AI features", port)
+
+	// Cleanup old jobs every 5 minutes
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		for range ticker.C {
+			cutoff := time.Now().Add(-30 * time.Minute)
+			aiJobsMu.Lock()
+			for id, job := range aiJobs {
+				job.mu.RLock()
+				done := (job.Status == "complete" || job.Status == "failed" || job.Status == "cancelled") && job.CreatedAt.Before(cutoff)
+				job.mu.RUnlock()
+				if done {
+					delete(aiJobs, id)
+				}
+			}
+			aiJobsMu.Unlock()
+		}
+	}()
 
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)
@@ -269,7 +545,7 @@ func main() {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == "OPTIONS" {
@@ -320,43 +596,200 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		rembgAvailable = resp.StatusCode == http.StatusOK
 	}
 
+	hasSpatial := contains(models, spatialModel) || strings.HasSuffix(spatialModel, "-cloud")
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"ollama_url":         ollamaURL,
-		"vision_model":       visionModel,
-		"text_model":         textModel,
-		"rembg_url":          rembgURL,
-		"available_models":   models,
-		"vision_model_ready": hasVision,
-		"text_model_ready":   hasText,
-		"rembg_available":    rembgAvailable,
-		"ready":              hasVision,
+		"ollama_url":           ollamaURL,
+		"vision_model":         visionModel,
+		"text_model":           textModel,
+		"spatial_model":        spatialModel,
+		"cloud_text_model":     cloudTextModel,
+		"ollama_cloud":         ollamaCloud,
+		"rembg_url":            rembgURL,
+		"available_models":     models,
+		"vision_model_ready":   hasVision,
+		"text_model_ready":     hasText,
+		"spatial_model_ready":  hasSpatial,
+		"rembg_available":      rembgAvailable,
+		"ready":                hasVision,
 	})
 }
 
-func handleAnalyze(w http.ResponseWriter, r *http.Request) {
-	var req AnalyzeRequest
+// ============================================================================
+// GENERIC AI JOB HANDLERS
+// ============================================================================
+
+// aiJobWorkers maps job types to their worker functions
+var aiJobWorkers = map[string]func(context.Context, *AIJob, json.RawMessage){
+	"analyze":        runAnalyzeJob,
+	"tags":           runTagsJob,
+	"dress":          runDressJob,
+	"remove-bg":      runRemoveBgJob,
+	"tryon":          runTryOnJob,
+	"suggest-outfit": runSuggestOutfitJob,
+	"color-match":    runColorMatchJob,
+	"style-match":    runStyleMatchJob,
+	"rate-outfit":    runRateOutfitJob,
+	"wardrobe-gaps":  runWardrobeGapsJob,
+	"chat":           runChatJob,
+}
+
+func handleAIJobSubmit(w http.ResponseWriter, r *http.Request) {
+	var req AIJobSubmitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
 		return
 	}
 
-	if req.Image == "" {
-		writeError(w, http.StatusBadRequest, "Image is required")
+	workerFn, ok := aiJobWorkers[req.Type]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Unknown job type: "+req.Type)
 		return
 	}
 
-	// Strip data URI prefix if present
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &AIJob{
+		ID:        generateJobID(),
+		Type:      req.Type,
+		Status:    "queued",
+		Message:   "Job queued",
+		CreatedAt: time.Now(),
+		cancel:    cancel,
+	}
+
+	aiJobsMu.Lock()
+	aiJobs[job.ID] = job
+	aiJobsMu.Unlock()
+
+	log.Printf("🤖 Job %s [%s] queued", job.ID[:8], req.Type)
+
+	go workerFn(ctx, job, req.Payload)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"id":     job.ID,
+		"status": "queued",
+	})
+}
+
+func handleAIJobStatus(w http.ResponseWriter, r *http.Request) {
+	jobID := r.PathValue("id")
+
+	aiJobsMu.RLock()
+	job, ok := aiJobs[jobID]
+	aiJobsMu.RUnlock()
+
+	if !ok {
+		writeError(w, http.StatusNotFound, "Job not found")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Send current state first
+	job.mu.RLock()
+	status := job.Status
+	message := job.Message
+	result := job.Result
+	errMsg := job.Error
+	job.mu.RUnlock()
+
+	sendSSE(w, "status", message)
+
+	if status == "complete" && result != nil {
+		sendSSE(w, "result", string(result))
+		return
+	}
+	if status == "failed" {
+		sendSSE(w, "error", errMsg)
+		return
+	}
+	if status == "cancelled" {
+		sendSSE(w, "error", "Job was cancelled")
+		return
+	}
+
+	ch := job.addListener()
+	defer job.removeListener(ch)
+
+	for {
+		select {
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			sendSSE(w, evt.Event, evt.Data)
+			if evt.Event == "result" || evt.Event == "error" {
+				return
+			}
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+func handleAIJobCancel(w http.ResponseWriter, r *http.Request) {
+	jobID := r.PathValue("id")
+
+	aiJobsMu.RLock()
+	job, ok := aiJobs[jobID]
+	aiJobsMu.RUnlock()
+
+	if !ok {
+		writeError(w, http.StatusNotFound, "Job not found")
+		return
+	}
+
+	job.mu.Lock()
+	if job.Status == "queued" || job.Status == "processing" {
+		job.Status = "cancelled"
+		job.Message = "Job cancelled by user"
+		job.cancel()
+		log.Printf("🤖 Job %s [%s] cancelled", job.ID[:8], job.Type)
+	}
+	job.mu.Unlock()
+
+	job.fail("Job cancelled by user")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"id":     job.ID,
+		"status": "cancelled",
+	})
+}
+
+// ============================================================================
+// AI JOB WORKERS
+// ============================================================================
+
+func runAnalyzeJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
+	var req AnalyzeRequest
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
+		return
+	}
+
+	if req.Image == "" {
+		job.fail("Image is required")
+		return
+	}
+
 	imageData := req.Image
 	if idx := strings.Index(imageData, ","); idx != -1 {
 		imageData = imageData[idx+1:]
 	}
 
-	// Validate base64
 	if _, err := base64.StdEncoding.DecodeString(imageData); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid base64 image data")
+		job.fail("Invalid base64 image data")
 		return
 	}
+
+	job.updateStatus("processing", "Analyzing clothing with AI...")
 
 	prompt := req.Prompt
 	if prompt == "" {
@@ -365,81 +798,55 @@ func handleAnalyze(w http.ResponseWriter, r *http.Request) {
 1. What type is it? (Tops, Bottoms, Outerwear, Shoes, or Accessories)
 2. What color is it?
 3. Read any text on labels or tags - what brand name do you see?
-4. Describe it in one sentence
-5. List 3-5 style tags
+4. Give a SHORT name (2-5 words, e.g. "Blue Denim Jeans", "White Cotton T-Shirt")
+5. Give a DETAILED description (1-3 sentences covering fit, material, style, notable features)
+6. List 3-5 style tags
 
 Respond ONLY with JSON:
-{"description": "A beige cable-knit sweater", "category": "Tops", "color": "Beige", "brand": "MR MARVIS", "tags": ["casual", "knitwear", "warm"]}
+{"name": "Beige Cable-Knit Sweater", "description": "A warm cable-knit sweater in beige with a crew neck, ribbed cuffs and hem. Made from a soft wool blend, suitable for layering in autumn and winter. Features a relaxed fit with a classic fisherman knit pattern.", "category": "Tops", "color": "Beige", "brand": "MR MARVIS", "tags": ["casual", "knitwear", "warm"]}
 
 If no brand text visible, use "brand": ""`
 	}
 
-	// Allow model override
-	modelToUse := visionModel
+	primaryModel := visionModel
+	if ollamaCloud {
+		primaryModel = defaultSpatialModelCloud
+	}
 	if req.Model != "" {
-		modelToUse = req.Model
-		log.Printf("Using custom model: %s (instead of default %s)", modelToUse, visionModel)
+		primaryModel = req.Model
 	}
 
-	log.Printf("Analyzing image with %s...", modelToUse)
-	log.Printf("Using prompt: %s", prompt)
+	if ctx.Err() != nil {
+		return
+	}
+
 	start := time.Now()
-
-	ollamaReq := OllamaRequest{
-		Model:  modelToUse,
-		Prompt: prompt,
-		Images: []string{imageData},
-		Stream: false,
-	}
-
-	reqBody, _ := json.Marshal(ollamaReq)
-	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	ollamaResp, usedModel, err := callOllamaWithFallback(prompt, []string{imageData}, primaryModel, visionModel)
 	if err != nil {
-		log.Printf("ERROR: Ollama request failed: %v", err)
-		writeError(w, http.StatusServiceUnavailable, "Ollama request failed: "+err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("ERROR: Ollama returned status %d: %s", resp.StatusCode, string(body))
-		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("Ollama error (status %d): %s", resp.StatusCode, string(body)))
+		job.fail("Ollama request failed: " + err.Error())
 		return
 	}
 
-	body, _ := io.ReadAll(resp.Body)
-	log.Printf("Ollama response time: %v", time.Since(start))
-	log.Printf("Raw Ollama response: %s", string(body))
+	log.Printf("Analyze job %s: response time %v (model: %s)", job.ID[:8], time.Since(start), usedModel)
 
-	var ollamaResp OllamaResponse
-	if err := json.Unmarshal(body, &ollamaResp); err != nil {
-		log.Printf("ERROR: Failed to parse Ollama JSON: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to parse Ollama response: "+err.Error())
-		return
-	}
-
-	log.Printf("Parsed response: %s", ollamaResp.Response)
-
-	// Try to parse the response as JSON
 	response := parseClothingResponse(ollamaResp.Response)
 	response.RawResponse = ollamaResp.Response
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	job.complete(response)
 }
 
-func handleTags(w http.ResponseWriter, r *http.Request) {
+func runTagsJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	var req TagsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON")
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
 		return
 	}
 
 	if req.Description == "" {
-		writeError(w, http.StatusBadRequest, "Description is required")
+		job.fail("Description is required")
 		return
 	}
+
+	job.updateStatus("processing", "Generating tags...")
 
 	prompt := fmt.Sprintf(`Given this clothing item description: "%s"
 
@@ -447,52 +854,41 @@ Generate 5 relevant tags for this item. Tags should be single words or short phr
 
 Respond with ONLY a JSON array of strings, nothing else. Example: ["casual", "cotton", "summer"]`, req.Description)
 
-	ollamaReq := OllamaRequest{
-		Model:  textModel,
-		Prompt: prompt,
-		Stream: false,
+	if ctx.Err() != nil {
+		return
 	}
 
-	reqBody, _ := json.Marshal(ollamaReq)
-	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	ollamaResp, _, err := callOllamaWithFallback(prompt, nil, cloudTextModel, textModel)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "Ollama request failed: "+err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	var ollamaResp OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to parse Ollama response")
+		job.fail("Ollama request failed: " + err.Error())
 		return
 	}
 
-	// Parse tags from response
 	tags := parseTagsResponse(ollamaResp.Response)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(TagsResponse{Tags: tags})
+	job.complete(TagsResponse{Tags: tags})
 }
 
-func handleDress(w http.ResponseWriter, r *http.Request) {
+func runDressJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	var req DressRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
 		return
 	}
 
 	if req.BodyImage == "" {
-		writeError(w, http.StatusBadRequest, "Body image is required")
+		job.fail("Body image is required")
 		return
 	}
 
 	if len(req.ClothingItems) == 0 {
-		writeError(w, http.StatusBadRequest, "At least one clothing item is required")
+		job.fail("At least one clothing item is required")
 		return
 	}
 
-	// Strip data URI prefixes
+	job.updateStatus("processing", "AI is positioning clothing on body...")
+
 	bodyData := req.BodyImage
+	isSVG := strings.HasPrefix(bodyData, "data:image/svg")
 	if idx := strings.Index(bodyData, ","); idx != -1 {
 		bodyData = bodyData[idx+1:]
 	}
@@ -500,74 +896,71 @@ func handleDress(w http.ResponseWriter, r *http.Request) {
 	prompt := req.Prompt
 	if prompt == "" {
 		itemsList := ""
-		for i, item := range req.ClothingItems {
-			itemsList += fmt.Sprintf("%d. %s (%s)\n", i+1, item.Name, item.Category)
+		for _, item := range req.ClothingItems {
+			itemsList += fmt.Sprintf("- ID %d: %s (category: %s)\n", item.ID, item.Name, item.Category)
 		}
 
-		prompt = fmt.Sprintf(`Look at this person/mannequin image and the following clothing items:
+		prompt = fmt.Sprintf(`Look at this person/mannequin image. I want to overlay clothing items on this body.
+
+The image dimensions map to a coordinate system where:
+- X goes from 0 (left edge) to 100 (right edge)
+- Y goes from 0 (top edge) to 100 (bottom edge)
+
+For reference on a standing person/mannequin:
+- Head/neck area: Y around 5-15
+- Shoulders: Y around 15-20
+- Chest/torso: Y around 20-40
+- Waist: Y around 40-45
+- Hips: Y around 45-55
+- Upper legs: Y around 55-70
+- Lower legs: Y around 70-85
+- Feet: Y around 85-95
+- Center of body: X around 40-50
+
+Items to position:
 %s
 
-For each item, suggest where it should be positioned on the body:
-- X: horizontal position (0-100, where 0=left, 50=center, 100=right)
-- Y: vertical position (0-100, where 0=top, 50=middle, 100=bottom)
-- Z: layer order (higher numbers are on top)
+For each item, give the X,Y coordinates where its CENTER should be placed on the body, and a Z layer order (higher = on top).
 
-Consider:
-- Tops should be positioned on the upper body
-- Bottoms on the lower body
-- Outerwear should be layered on top
-- Proper positioning based on body proportions
+Think step by step about where each category belongs:
+- Tops (shirts, t-shirts): center chest area (X ~45, Y ~30)
+- Bottoms (pants, jeans): center hip/leg area (X ~45, Y ~55)
+- Shoes: feet area (X ~45, Y ~90)
+- Outerwear (jacket, coat): over the torso, slightly wider (X ~45, Y ~28), Z should be highest
+- Accessories: varies - watches near wrist, hats near head, bags to the side
 
-Respond ONLY with valid JSON:
-{"positions": [{"id": 1, "x": 45, "y": 30, "z": 1}, ...], "explanation": "Brief explanation"}`, itemsList)
+Respond ONLY with valid JSON in English. Do not use any other language:
+{"positions": [{"id": 1, "x": 45, "y": 30, "z": 1}], "explanation": "Brief explanation in English"}`, itemsList)
 	}
 
-	log.Printf("AI Dress request with %d items", len(req.ClothingItems))
+	var images []string
+	if !isSVG {
+		images = []string{bodyData}
+	} else {
+		log.Printf("Body image is SVG, using text-only positioning")
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+
 	start := time.Now()
-
-	ollamaReq := OllamaRequest{
-		Model:  visionModel,
-		Prompt: prompt,
-		Images: []string{bodyData},
-		Stream: false,
-	}
-
-	reqBody, _ := json.Marshal(ollamaReq)
-	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	ollamaResp, usedModel, err := callOllamaWithFallback(prompt, images, spatialModel, defaultSpatialModelLocal)
 	if err != nil {
-		log.Printf("ERROR: Ollama request failed: %v", err)
-		writeError(w, http.StatusServiceUnavailable, "Ollama request failed: "+err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("ERROR: Ollama returned status %d: %s", resp.StatusCode, string(body))
-		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("Ollama error (status %d)", resp.StatusCode))
+		job.fail("Ollama request failed: " + err.Error())
 		return
 	}
 
-	body, _ := io.ReadAll(resp.Body)
-	log.Printf("AI Dress response time: %v", time.Since(start))
+	log.Printf("Dress job %s: response time %v (model: %s)", job.ID[:8], time.Since(start), usedModel)
 
-	var ollamaResp OllamaResponse
-	if err := json.Unmarshal(body, &ollamaResp); err != nil {
-		log.Printf("ERROR: Failed to parse Ollama JSON: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to parse Ollama response")
-		return
-	}
-
-	// Parse the response
 	dressResp := parseDressResponse(ollamaResp.Response, len(req.ClothingItems))
 	dressResp.RawResponse = ollamaResp.Response
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(dressResp)
+	job.complete(dressResp)
 }
 
 func parseClothingResponse(response string) AnalyzeResponse {
 	result := AnalyzeResponse{
+		Name:        "",
 		Description: "Unable to analyze",
 		Category:    "Unknown",
 		Color:       "Unknown",
@@ -597,14 +990,18 @@ func parseClothingResponse(response string) AnalyzeResponse {
 	jsonStr := response[start : end+1]
 
 	var parsed struct {
-		Description string   `json:"description"`
-		Category    string   `json:"category"`
+		Name        string      `json:"name"`
+		Description string      `json:"description"`
+		Category    string      `json:"category"`
 		Color       interface{} `json:"color"` // Can be string or array
-		Brand       string   `json:"brand"`
-		Tags        []string `json:"tags"`
+		Brand       string      `json:"brand"`
+		Tags        []string    `json:"tags"`
 	}
 
 	if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil {
+		if parsed.Name != "" {
+			result.Name = parsed.Name
+		}
 		if parsed.Description != "" {
 			result.Description = parsed.Description
 		}
@@ -730,127 +1127,482 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func handleRemoveBg(w http.ResponseWriter, r *http.Request) {
+// callOllamaWithFallback tries the primary model, and if it fails (rate limit, error),
+// falls back to the fallback model. Returns the parsed response, the model used, and any error.
+func callOllamaWithFallback(prompt string, images []string, primaryModel, fallbackModel string) (*OllamaResponse, string, error) {
+	resp, err := callOllama(prompt, images, primaryModel)
+	if err == nil {
+		return resp, primaryModel, nil
+	}
+
+	// If primary and fallback are the same, don't retry
+	if primaryModel == fallbackModel {
+		return nil, primaryModel, err
+	}
+
+	log.Printf("⚠️  %s failed (%v), falling back to local model %s", primaryModel, err, fallbackModel)
+	resp, err = callOllama(prompt, images, fallbackModel)
+	if err != nil {
+		return nil, fallbackModel, err
+	}
+	return resp, fallbackModel, nil
+}
+
+func callOllama(prompt string, images []string, model string) (*OllamaResponse, error) {
+	log.Printf("🤖 Calling Ollama model: %s", model)
+	ollamaReq := OllamaRequest{
+		Model:  model,
+		Prompt: prompt,
+		Images: images,
+		Stream: false,
+	}
+
+	reqBody, _ := json.Marshal(ollamaReq)
+	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("rate limited (429)")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var ollamaResp OllamaResponse
+	if err := json.Unmarshal(body, &ollamaResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &ollamaResp, nil
+}
+
+// ============================================================================
+// OLLAMA CHAT API (for tool calling)
+// ============================================================================
+
+func callOllamaChat(messages []OllamaChatMessage, tools []OllamaToolDef, model string) (*OllamaChatResponse, error) {
+	log.Printf("🤖 Calling Ollama chat model: %s (%d messages, %d tools)", model, len(messages), len(tools))
+
+	req := OllamaChatRequest{
+		Model:    model,
+		Messages: messages,
+		Tools:    tools,
+		Stream:   false,
+	}
+
+	reqBody, _ := json.Marshal(req)
+	resp, err := http.Post(ollamaURL+"/api/chat", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("rate limited (429)")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var chatResp OllamaChatResponse
+	if err := json.Unmarshal(body, &chatResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &chatResp, nil
+}
+
+func callOllamaChatWithFallback(messages []OllamaChatMessage, tools []OllamaToolDef, primaryModel, fallbackModel string) (*OllamaChatResponse, string, error) {
+	resp, err := callOllamaChat(messages, tools, primaryModel)
+	if err == nil {
+		return resp, primaryModel, nil
+	}
+
+	if primaryModel == fallbackModel {
+		return nil, primaryModel, err
+	}
+
+	log.Printf("⚠️  Chat %s failed (%v), falling back to %s", primaryModel, err, fallbackModel)
+	resp, err = callOllamaChat(messages, tools, fallbackModel)
+	if err != nil {
+		return nil, fallbackModel, err
+	}
+	return resp, fallbackModel, nil
+}
+
+func runRemoveBgJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	var req RemoveBgRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
 		return
 	}
 
 	if req.Image == "" {
-		writeError(w, http.StatusBadRequest, "Image is required")
+		job.fail("Image is required")
 		return
 	}
 
-	// Strip data URI prefix if present
 	imageData := req.Image
 	if idx := strings.Index(imageData, ","); idx != -1 {
 		imageData = imageData[idx+1:]
 	}
 
-	// Decode base64 to raw bytes
 	imgBytes, err := base64.StdEncoding.DecodeString(imageData)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid base64 image data")
+		job.fail("Invalid base64 image data")
 		return
 	}
 
-	log.Printf("Removing background from image (%d bytes)...", len(imgBytes))
+	job.updateStatus("processing", "Removing background...")
+
+	if ctx.Err() != nil {
+		return
+	}
+
 	start := time.Now()
 
-	// Call rembg service with multipart/form-data
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
-
 	part, err := writer.CreateFormFile("file", "image.png")
 	if err != nil {
-		log.Printf("ERROR: Failed to create form file: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to prepare request")
+		job.fail("Failed to prepare request")
 		return
 	}
-
-	if _, err := part.Write(imgBytes); err != nil {
-		log.Printf("ERROR: Failed to write image data: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to prepare request")
-		return
-	}
-
-	if err := writer.Close(); err != nil {
-		log.Printf("ERROR: Failed to close writer: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to prepare request")
-		return
-	}
+	part.Write(imgBytes)
+	writer.Close()
 
 	resp, err := http.Post(rembgURL+"/api/remove", writer.FormDataContentType(), &buf)
 	if err != nil {
-		log.Printf("ERROR: rembg request failed: %v", err)
-		writeError(w, http.StatusServiceUnavailable, "Background removal service not available: "+err.Error())
+		job.fail("Background removal service not available: " + err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("ERROR: rembg returned status %d: %s", resp.StatusCode, string(body))
-		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("Background removal failed (status %d)", resp.StatusCode))
+		job.fail(fmt.Sprintf("Background removal failed (status %d)", resp.StatusCode))
 		return
 	}
 
-	// Read the processed image
 	processedBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("ERROR: Failed to read rembg response: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to read processed image")
+		job.fail("Failed to read processed image")
 		return
 	}
 
 	log.Printf("Background removed in %v (%d bytes -> %d bytes)", time.Since(start), len(imgBytes), len(processedBytes))
 
-	// Encode back to base64
 	processedBase64 := base64.StdEncoding.EncodeToString(processedBytes)
-
-	// Return with data URI prefix for PNG (rembg returns PNG with transparency)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(RemoveBgResponse{
+	job.complete(RemoveBgResponse{
 		Image: "data:image/png;base64," + processedBase64,
 	})
 }
 
-func handleSuggestOutfit(w http.ResponseWriter, r *http.Request) {
+// uploadToGradio uploads a base64 image to a Gradio Space and returns the file reference.
+func uploadToGradio(spaceURL string, imageData string) (map[string]interface{}, error) {
+	raw := imageData
+	if idx := strings.Index(raw, ","); idx != -1 {
+		raw = raw[idx+1:]
+	}
+
+	imgBytes, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64: %w", err)
+	}
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("files", "image.png")
+	if err != nil {
+		return nil, err
+	}
+	part.Write(imgBytes)
+	writer.Close()
+
+	resp, err := http.Post(spaceURL+"/upload", writer.FormDataContentType(), &buf)
+	if err != nil {
+		return nil, fmt.Errorf("upload failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("upload returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var uploadResult []string
+	if err := json.NewDecoder(resp.Body).Decode(&uploadResult); err != nil {
+		return nil, fmt.Errorf("failed to parse upload response: %w", err)
+	}
+
+	if len(uploadResult) == 0 {
+		return nil, fmt.Errorf("upload returned empty result")
+	}
+
+	return map[string]interface{}{
+		"path": uploadResult[0],
+	}, nil
+}
+
+// mapClothType maps internal cloth type names to FASHN VTON categories.
+// Internal: "upper", "lower", "overall" → FASHN: "tops", "bottoms", "one-pieces"
+func mapClothType(clothType string) string {
+	switch strings.ToLower(clothType) {
+	case "lower", "bottom", "bottoms":
+		return "bottoms"
+	case "overall", "one-piece", "one-pieces", "dress", "full":
+		return "one-pieces"
+	default:
+		return "tops"
+	}
+}
+
+// callFashnTryOn calls the FASHN VTON 1.5 Gradio Space API.
+func callFashnTryOn(spaceURL, personImage, garmentImage, clothType string) (string, error) {
+	personRef, err := uploadToGradio(spaceURL, personImage)
+	if err != nil {
+		return "", fmt.Errorf("person image upload: %w", err)
+	}
+
+	garmentRef, err := uploadToGradio(spaceURL, garmentImage)
+	if err != nil {
+		return "", fmt.Errorf("garment image upload: %w", err)
+	}
+
+	category := mapClothType(clothType)
+
+	// FASHN VTON 1.5 try_on endpoint:
+	// args: person_image, garment_image, category, photo_type, steps, guidance_scale, seed, segmentation_free
+	callPayload := map[string]interface{}{
+		"data": []interface{}{
+			personRef,   // Person Image
+			garmentRef,  // Garment Image
+			category,    // Category: tops, bottoms, one-pieces
+			"flat-lay",  // Photo Type: model or flat-lay (flat-lay for product shots)
+			50,          // Sampling Steps (10-50)
+			1.5,         // Guidance Scale (1.0-3.0)
+			42,          // Seed
+			true,        // Segmentation Free
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(callPayload)
+	resp, err := http.Post(spaceURL+"/call/try_on", "application/json", bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("predict call failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("predict returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var callResult struct {
+		EventID string `json:"event_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&callResult); err != nil {
+		return "", fmt.Errorf("failed to parse event_id: %w", err)
+	}
+
+	if callResult.EventID == "" {
+		return "", fmt.Errorf("no event_id returned")
+	}
+
+	log.Printf("🧥 FASHN VTON queued, event_id=%s", callResult.EventID)
+
+	resultURL := fmt.Sprintf("%s/call/try_on/%s", spaceURL, callResult.EventID)
+	resultResp, err := http.Get(resultURL)
+	if err != nil {
+		return "", fmt.Errorf("result stream failed: %w", err)
+	}
+	defer resultResp.Body.Close()
+
+	scanner := bufio.NewScanner(resultResp.Body)
+	scanner.Buffer(make([]byte, 0), 10*1024*1024)
+
+	var lastEvent string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event: ") {
+			lastEvent = strings.TrimPrefix(line, "event: ")
+		} else if strings.HasPrefix(line, "data: ") && lastEvent == "complete" {
+			dataStr := strings.TrimPrefix(line, "data: ")
+
+			var resultData []interface{}
+			if err := json.Unmarshal([]byte(dataStr), &resultData); err != nil {
+				return "", fmt.Errorf("failed to parse result data: %w", err)
+			}
+
+			if len(resultData) == 0 {
+				return "", fmt.Errorf("empty result data")
+			}
+
+			resultMap, ok := resultData[0].(map[string]interface{})
+			if !ok {
+				return "", fmt.Errorf("unexpected result format: %T", resultData[0])
+			}
+
+			imageURL := ""
+			if u, ok := resultMap["url"].(string); ok {
+				imageURL = u
+			} else if p, ok := resultMap["path"].(string); ok {
+				imageURL = spaceURL + "/file=" + p
+			}
+
+			if imageURL == "" {
+				return "", fmt.Errorf("no image URL in result: %v", resultMap)
+			}
+
+			imgResp, err := http.Get(imageURL)
+			if err != nil {
+				return "", fmt.Errorf("failed to download result: %w", err)
+			}
+			defer imgResp.Body.Close()
+
+			imgBytes, err := io.ReadAll(imgResp.Body)
+			if err != nil {
+				return "", fmt.Errorf("failed to read result image: %w", err)
+			}
+
+			return "data:image/png;base64," + base64.StdEncoding.EncodeToString(imgBytes), nil
+		} else if strings.HasPrefix(line, "data: ") && lastEvent == "error" {
+			return "", fmt.Errorf("gradio error: %s", strings.TrimPrefix(line, "data: "))
+		}
+	}
+
+	return "", fmt.Errorf("no complete event received from Gradio")
+}
+
+// sendSSE writes a server-sent event to the response writer and flushes.
+func sendSSE(w http.ResponseWriter, event, data string) {
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func runTryOnJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
+	var req TryOnRequest
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
+		return
+	}
+
+	if req.PersonImage == "" || req.GarmentImage == "" {
+		job.fail("person_image and garment_image are required")
+		return
+	}
+
+	if req.ClothType == "" {
+		req.ClothType = "upper"
+	}
+
+	start := time.Now()
+
+	job.updateStatus("processing", "☁️ Connecting to FASHN VTON cloud...")
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	resultImage, err := callFashnTryOn(fashnSpaceURL, req.PersonImage, req.GarmentImage, req.ClothType)
+
+	if err == nil {
+		log.Printf("☁️ FASHN VTON try-on complete in %v", time.Since(start))
+		job.complete(&TryOnResponse{Image: resultImage})
+		return
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	log.Printf("⚠️ FASHN VTON try-on failed: %v", err)
+	job.updateStatus("processing", "⚠️ Cloud unavailable, falling back to local model...")
+
+	if catvtonLocalURL == "" {
+		job.fail("Virtual try-on failed: " + err.Error())
+		return
+	}
+
+	log.Printf("🔄 Falling back to local CatVTON at %s", catvtonLocalURL)
+	job.updateStatus("processing", "🖥️ Running locally on CPU (this may take 5+ minutes)...")
+
+	localPayload, _ := json.Marshal(map[string]string{
+		"person_image":  req.PersonImage,
+		"garment_image": req.GarmentImage,
+		"cloth_type":    req.ClothType,
+	})
+
+	localReq, _ := http.NewRequestWithContext(ctx, "POST", catvtonLocalURL+"/api/tryon", bytes.NewReader(localPayload))
+	localReq.Header.Set("Content-Type", "application/json")
+
+	longClient := &http.Client{Timeout: 10 * time.Minute}
+	localResp, localErr := longClient.Do(localReq)
+	if localErr != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		job.fail("Virtual try-on failed (both cloud and local): " + localErr.Error())
+		return
+	}
+	defer localResp.Body.Close()
+
+	body, _ := io.ReadAll(localResp.Body)
+	if localResp.StatusCode != http.StatusOK {
+		job.fail(fmt.Sprintf("Local try-on failed (status %d)", localResp.StatusCode))
+		return
+	}
+
+	var result TryOnResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		job.fail("Failed to parse local result: " + err.Error())
+		return
+	}
+
+	log.Printf("🧥 Local CatVTON try-on complete in %v", time.Since(start))
+	job.complete(&result)
+}
+
+func runSuggestOutfitJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	var req SuggestOutfitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
 		return
 	}
 
 	if len(req.Items) == 0 {
-		writeError(w, http.StatusBadRequest, "At least one item required")
+		job.fail("At least one item required")
 		return
 	}
 
-	// Build item list for AI with full details
+	job.updateStatus("processing", "AI is selecting outfit...")
+
 	itemsList := ""
 	for _, item := range req.Items {
 		tags := ""
 		if len(item.Tags) > 0 {
 			tags = " [" + strings.Join(item.Tags, ", ") + "]"
 		}
-
 		brand := ""
 		if item.Brand != "" {
 			brand = " by " + item.Brand
 		}
-
 		desc := ""
 		if item.Description != "" {
 			desc = " - " + item.Description
 		}
-
 		worn := ""
 		if item.WearCount > 0 {
 			worn = fmt.Sprintf(" (worn %dx)", item.WearCount)
 		}
-
 		itemsList += fmt.Sprintf("- ID %d: %s%s (%s, %s)%s%s%s\n",
 			item.ID, item.Name, brand, item.Category, item.Color, tags, desc, worn)
 	}
@@ -863,12 +1615,14 @@ Weather: %s
 Available items (%d):
 %s
 
-Select items for a complete outfit. Include:
-- ONE top (shirt, t-shirt, blouse)
+Select items for a complete outfit. You MUST include ALL of these:
+- ONE shirt or t-shirt (REQUIRED - a sweater or cardigan is NOT a shirt, it goes on top of a shirt)
 - ONE bottom (pants, jeans, skirt, shorts)
-- ONE pair of shoes
-- OPTIONAL: One outerwear (jacket, coat, cardigan, sweater) - ONLY if weather requires it
+- ONE pair of shoes (REQUIRED - every outfit needs shoes)
+- OPTIONAL: One outerwear layer (jacket, coat, cardigan, sweater) - if weather requires it, this goes OVER the shirt
 - OPTIONAL: 1-2 accessories (watch, belt, scarf, hat, bag)
+
+An outfit without shoes is INCOMPLETE. Always include shoes.
 
 Important:
 - Choose colors that complement each other
@@ -883,51 +1637,37 @@ Respond with JSON:
   "tips": ["Styling tip 1", "Styling tip 2"]
 }`, req.Occasion, req.Weather, len(req.Items), itemsList)
 
-	log.Printf("Suggesting outfit for %s / %s with %d items", req.Occasion, req.Weather, len(req.Items))
+	if ctx.Err() != nil {
+		return
+	}
+
 	start := time.Now()
-
-	ollamaReq := OllamaRequest{
-		Model:  textModel,
-		Prompt: prompt,
-		Stream: false,
-	}
-
-	reqBody, _ := json.Marshal(ollamaReq)
-	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	ollamaResp, usedModel, err := callOllamaWithFallback(prompt, nil, cloudTextModel, textModel)
 	if err != nil {
-		log.Printf("ERROR: Ollama request failed: %v", err)
-		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	var ollamaResp OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		log.Printf("ERROR: Failed to parse Ollama response: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
+		job.fail("AI request failed: " + err.Error())
 		return
 	}
 
-	log.Printf("Outfit suggestion time: %v", time.Since(start))
+	log.Printf("Suggest outfit job %s: %v (model: %s)", job.ID[:8], time.Since(start), usedModel)
 
 	result := parseSuggestOutfitResponse(ollamaResp.Response)
 	result.RawResponse = ollamaResp.Response
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	job.complete(result)
 }
 
-func handleColorMatch(w http.ResponseWriter, r *http.Request) {
+func runColorMatchJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	var req ColorMatchRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
 		return
 	}
 
 	if len(req.Items) < 2 {
-		writeError(w, http.StatusBadRequest, "At least 2 items required for color matching")
+		job.fail("At least 2 items required for color matching")
 		return
 	}
+
+	job.updateStatus("processing", "Analyzing color coordination...")
 
 	itemsList := ""
 	for i, item := range req.Items {
@@ -950,54 +1690,39 @@ Respond ONLY with JSON:
   "suggestions": ["Suggestion 1", "Suggestion 2"]
 }`, itemsList)
 
-	log.Printf("Analyzing color match for %d items", len(req.Items))
-	start := time.Now()
-
-	ollamaReq := OllamaRequest{
-		Model:  textModel,
-		Prompt: prompt,
-		Stream: false,
+	if ctx.Err() != nil {
+		return
 	}
 
-	reqBody, _ := json.Marshal(ollamaReq)
-	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	ollamaResp, _, err := callOllamaWithFallback(prompt, nil, cloudTextModel, textModel)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
+		job.fail("AI request failed: " + err.Error())
 		return
 	}
-	defer resp.Body.Close()
-
-	var ollamaResp OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
-		return
-	}
-
-	log.Printf("Color match analysis time: %v", time.Since(start))
 
 	result := parseColorMatchResponse(ollamaResp.Response)
 	result.RawResponse = ollamaResp.Response
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	job.complete(result)
 }
 
-func handleStyleMatch(w http.ResponseWriter, r *http.Request) {
+func runStyleMatchJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	var req StyleMatchRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
 		return
 	}
 
 	if req.BaseItem.ID == 0 {
-		writeError(w, http.StatusBadRequest, "Base item required")
+		job.fail("Base item required")
 		return
 	}
 
 	if len(req.Items) == 0 {
-		writeError(w, http.StatusBadRequest, "Items to match required")
+		job.fail("Items to match required")
 		return
 	}
+
+	job.updateStatus("processing", "Finding matching items...")
 
 	maxItems := req.MaxItems
 	if maxItems == 0 {
@@ -1033,126 +1758,102 @@ Respond ONLY with JSON:
   ]
 }`, req.BaseItem.Name, req.BaseItem.Category, req.BaseItem.Color, baseTags, maxItems, itemsList)
 
-	log.Printf("Finding style matches for item %d", req.BaseItem.ID)
-	start := time.Now()
-
-	ollamaReq := OllamaRequest{
-		Model:  textModel,
-		Prompt: prompt,
-		Stream: false,
+	if ctx.Err() != nil {
+		return
 	}
 
-	reqBody, _ := json.Marshal(ollamaReq)
-	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	ollamaResp, _, err := callOllamaWithFallback(prompt, nil, cloudTextModel, textModel)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
+		job.fail("AI request failed: " + err.Error())
 		return
 	}
-	defer resp.Body.Close()
-
-	var ollamaResp OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
-		return
-	}
-
-	log.Printf("Style match time: %v", time.Since(start))
 
 	result := parseStyleMatchResponse(ollamaResp.Response)
 	result.RawResponse = ollamaResp.Response
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	job.complete(result)
 }
 
-func handleRateOutfit(w http.ResponseWriter, r *http.Request) {
+func runRateOutfitJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	var req RateOutfitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
 		return
 	}
 
 	if len(req.Items) == 0 {
-		writeError(w, http.StatusBadRequest, "At least one item required")
+		job.fail("At least one item required")
 		return
 	}
+
+	job.updateStatus("processing", "AI is rating your outfit...")
 
 	itemsList := ""
 	for _, item := range req.Items {
 		tags := strings.Join(item.Tags, ", ")
-		itemsList += fmt.Sprintf("- %s (%s, %s) [%s]\n", item.Name, item.Category, item.Color, tags)
+		desc := ""
+		if item.Description != "" {
+			desc = fmt.Sprintf(" — %s", item.Description)
+		}
+		itemsList += fmt.Sprintf("- %s (%s, %s) [%s]%s\n", item.Name, item.Category, item.Color, tags, desc)
 	}
 
-	prompt := fmt.Sprintf(`Rate this outfit from 0-10 and provide constructive feedback:
+	prompt := fmt.Sprintf(`You are rating an outfit that the user has put together. The user intends to wear ALL of these items together as one outfit.
 
+Items in this outfit:
 %s
 
-Consider:
-- Color harmony
-- Style cohesion
-- Appropriate layering
-- Balance and proportions
+Rate this outfit from 0-10 based on how well these items work TOGETHER.
 
-Respond ONLY with JSON:
+Rules:
+- The user IS wearing all these items together. Do not suggest removing items or wearing items "on their own".
+- Only reference garment features that are explicitly stated in the descriptions. Do not invent or assume details like neckline type, pattern, or fabric unless described.
+- Focus on: color harmony, style cohesion, whether the layering order makes sense, and overall balance.
+- Improvements should suggest what ADDITIONAL items or SWAPS from a wardrobe could enhance the outfit, not removing items already chosen.
+
+Respond ONLY with valid JSON:
 {
-  "rating": 8,
-  "feedback": "Overall assessment in 1-2 sentences",
-  "strengths": ["What works well", "Another strength"],
-  "improvements": ["How to improve", "Another suggestion"]
+  "rating": 7,
+  "feedback": "1-2 sentence overall assessment",
+  "strengths": ["strength 1", "strength 2"],
+  "improvements": ["actionable suggestion 1", "actionable suggestion 2"],
+  "color_score": 85,
+  "color_analysis": "1 sentence about how the colors work together"
 }`, itemsList)
 
-	log.Printf("Rating outfit with %d items", len(req.Items))
-	start := time.Now()
-
-	ollamaReq := OllamaRequest{
-		Model:  textModel,
-		Prompt: prompt,
-		Stream: false,
+	if ctx.Err() != nil {
+		return
 	}
 
-	reqBody, _ := json.Marshal(ollamaReq)
-	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	ollamaResp, _, err := callOllamaWithFallback(prompt, nil, cloudTextModel, textModel)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
+		job.fail("AI request failed: " + err.Error())
 		return
 	}
-	defer resp.Body.Close()
-
-	var ollamaResp OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
-		return
-	}
-
-	log.Printf("Outfit rating time: %v", time.Since(start))
 
 	result := parseRateOutfitResponse(ollamaResp.Response)
 	result.RawResponse = ollamaResp.Response
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	job.complete(result)
 }
 
-func handleWardrobeGaps(w http.ResponseWriter, r *http.Request) {
+func runWardrobeGapsJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	var req WardrobeGapsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
 		return
 	}
 
 	if len(req.Items) == 0 {
-		writeError(w, http.StatusBadRequest, "At least one item required")
+		job.fail("At least one item required")
 		return
 	}
 
-	// Group items by category
+	job.updateStatus("processing", "Analyzing your wardrobe...")
+
 	categoryCount := make(map[string]int)
-	colorCount := make(map[string]int)
 	itemsList := ""
 
 	for _, item := range req.Items {
 		categoryCount[item.Category]++
-		colorCount[item.Color]++
 		tags := strings.Join(item.Tags, ", ")
 		itemsList += fmt.Sprintf("- %s (%s, %s) [%s]\n", item.Name, item.Category, item.Color, tags)
 	}
@@ -1186,36 +1887,19 @@ Respond ONLY with JSON:
   "tips": ["Wardrobe tip 1", "Wardrobe tip 2"]
 }`, len(req.Items), categorySummary, itemsList)
 
-	log.Printf("Analyzing wardrobe gaps for %d items", len(req.Items))
-	start := time.Now()
-
-	ollamaReq := OllamaRequest{
-		Model:  textModel,
-		Prompt: prompt,
-		Stream: false,
+	if ctx.Err() != nil {
+		return
 	}
 
-	reqBody, _ := json.Marshal(ollamaReq)
-	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	ollamaResp, _, err := callOllamaWithFallback(prompt, nil, cloudTextModel, textModel)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "AI request failed: "+err.Error())
+		job.fail("AI request failed: " + err.Error())
 		return
 	}
-	defer resp.Body.Close()
-
-	var ollamaResp OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to parse AI response")
-		return
-	}
-
-	log.Printf("Wardrobe gaps analysis time: %v", time.Since(start))
 
 	result := parseWardrobeGapsResponse(ollamaResp.Response)
 	result.RawResponse = ollamaResp.Response
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	job.complete(result)
 }
 
 // Parsing functions for AI responses
@@ -1359,10 +2043,12 @@ func parseRateOutfitResponse(response string) RateOutfitResponse {
 	jsonStr := response[start : end+1]
 
 	var parsed struct {
-		Rating       int      `json:"rating"`
-		Feedback     string   `json:"feedback"`
-		Strengths    []string `json:"strengths"`
-		Improvements []string `json:"improvements"`
+		Rating        int      `json:"rating"`
+		Feedback      string   `json:"feedback"`
+		Strengths     []string `json:"strengths"`
+		Improvements  []string `json:"improvements"`
+		ColorScore    int      `json:"color_score"`
+		ColorAnalysis string   `json:"color_analysis"`
 	}
 
 	if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil {
@@ -1377,6 +2063,12 @@ func parseRateOutfitResponse(response string) RateOutfitResponse {
 		}
 		if len(parsed.Improvements) > 0 {
 			result.Improvements = parsed.Improvements
+		}
+		if parsed.ColorScore > 0 {
+			result.ColorScore = parsed.ColorScore
+		}
+		if parsed.ColorAnalysis != "" {
+			result.ColorAnalysis = parsed.ColorAnalysis
 		}
 	}
 
@@ -1429,4 +2121,369 @@ func parseWardrobeGapsResponse(response string) WardrobeGapsResponse {
 	}
 
 	return result
+}
+
+// ============================================================================
+// AI CHAT WITH TOOL CALLING
+// ============================================================================
+
+const maxToolIterations = 10
+
+func getWardrobeTools() []OllamaToolDef {
+	return []OllamaToolDef{
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "list_items",
+				Description: "List clothing items in the wardrobe. Can filter by category, color, season, or brand.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"category": map[string]interface{}{"type": "string", "description": "Filter by category: Tops, Bottoms, Shoes, Outerwear, Accessories"},
+						"color":    map[string]interface{}{"type": "string", "description": "Filter by color"},
+						"season":   map[string]interface{}{"type": "string", "description": "Filter by season: All Season, Spring, Summer, Fall, Winter"},
+						"brand":    map[string]interface{}{"type": "string", "description": "Filter by brand name"},
+						"limit":    map[string]interface{}{"type": "integer", "description": "Max items to return (default 20)"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "get_item",
+				Description: "Get full details of a specific clothing item by its ID.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"item_id": map[string]interface{}{"type": "integer", "description": "The item ID"},
+					},
+					"required": []string{"item_id"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "list_outfits",
+				Description: "List saved outfits with their item IDs and wear counts.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"limit": map[string]interface{}{"type": "integer", "description": "Max outfits to return (default 20)"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "get_outfit",
+				Description: "Get full details of a specific outfit including all its items.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"outfit_id": map[string]interface{}{"type": "integer", "description": "The outfit ID"},
+					},
+					"required": []string{"outfit_id"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "get_wardrobe_stats",
+				Description: "Get wardrobe statistics: total items, counts by category, by color, and by season.",
+				Parameters: map[string]interface{}{
+					"type":       "object",
+					"properties": map[string]interface{}{},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "get_wear_history",
+				Description: "Get wear history — when items or outfits were worn.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"item_id":   map[string]interface{}{"type": "integer", "description": "Filter by item ID"},
+						"outfit_id": map[string]interface{}{"type": "integer", "description": "Filter by outfit ID"},
+						"days_back": map[string]interface{}{"type": "integer", "description": "Only show history from last N days (default 30)"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "get_most_worn",
+				Description: "Get the most frequently worn clothing items.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"limit": map[string]interface{}{"type": "integer", "description": "Number of items to return (default 10)"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "get_least_worn",
+				Description: "Get the least frequently worn clothing items (items that need more love).",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"limit": map[string]interface{}{"type": "integer", "description": "Number of items to return (default 10)"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "get_calendar_events",
+				Description: "Get calendar events showing what outfits were planned/worn on which dates, including weather and location.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"start_date": map[string]interface{}{"type": "string", "description": "Start date (YYYY-MM-DD)"},
+						"end_date":   map[string]interface{}{"type": "string", "description": "End date (YYYY-MM-DD)"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: OllamaFunctionDef{
+				Name:        "search_items",
+				Description: "Search for clothing items by name, brand, or description text.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"query": map[string]interface{}{"type": "string", "description": "Search text to match against item names, brands, and descriptions"},
+					},
+					"required": []string{"query"},
+				},
+			},
+		},
+	}
+}
+
+func intFromArgs(args map[string]interface{}, key string, def int) int {
+	if v, ok := args[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int:
+			return n
+		}
+	}
+	return def
+}
+
+func int64FromArgs(args map[string]interface{}, key string) *int64 {
+	if v, ok := args[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			i := int64(n)
+			return &i
+		case int:
+			i := int64(n)
+			return &i
+		}
+	}
+	return nil
+}
+
+func stringFromArgs(args map[string]interface{}, key string) string {
+	if v, ok := args[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func executeToolCall(ctx context.Context, userID int64, tc OllamaToolCall) (string, error) {
+	var args map[string]interface{}
+	if err := json.Unmarshal(tc.Function.Arguments, &args); err != nil {
+		return fmt.Sprintf(`{"error": "invalid arguments: %s"}`, err.Error()), nil
+	}
+
+	var result interface{}
+	var err error
+
+	switch tc.Function.Name {
+	case "list_items":
+		result, err = toolListItems(ctx, userID,
+			stringFromArgs(args, "category"),
+			stringFromArgs(args, "color"),
+			stringFromArgs(args, "season"),
+			stringFromArgs(args, "brand"),
+			intFromArgs(args, "limit", 20))
+
+	case "get_item":
+		itemID := int64FromArgs(args, "item_id")
+		if itemID == nil {
+			return `{"error": "item_id is required"}`, nil
+		}
+		result, err = toolGetItem(ctx, userID, *itemID)
+
+	case "list_outfits":
+		result, err = toolListOutfits(ctx, userID, intFromArgs(args, "limit", 20))
+
+	case "get_outfit":
+		outfitID := int64FromArgs(args, "outfit_id")
+		if outfitID == nil {
+			return `{"error": "outfit_id is required"}`, nil
+		}
+		result, err = toolGetOutfit(ctx, userID, *outfitID)
+
+	case "get_wardrobe_stats":
+		result, err = toolGetWardrobeStats(ctx, userID)
+
+	case "get_wear_history":
+		result, err = toolGetWearHistory(ctx, userID,
+			int64FromArgs(args, "item_id"),
+			int64FromArgs(args, "outfit_id"),
+			intFromArgs(args, "days_back", 30))
+
+	case "get_most_worn":
+		result, err = toolGetMostWorn(ctx, userID, intFromArgs(args, "limit", 10))
+
+	case "get_least_worn":
+		result, err = toolGetLeastWorn(ctx, userID, intFromArgs(args, "limit", 10))
+
+	case "get_calendar_events":
+		result, err = toolGetCalendarEvents(ctx, userID,
+			stringFromArgs(args, "start_date"),
+			stringFromArgs(args, "end_date"))
+
+	case "search_items":
+		query := stringFromArgs(args, "query")
+		if query == "" {
+			return `{"error": "query is required"}`, nil
+		}
+		result, err = toolSearchItems(ctx, userID, query)
+
+	default:
+		return fmt.Sprintf(`{"error": "unknown tool: %s"}`, tc.Function.Name), nil
+	}
+
+	if err != nil {
+		return fmt.Sprintf(`{"error": "%s"}`, err.Error()), nil
+	}
+
+	resultJSON, _ := json.Marshal(result)
+	return string(resultJSON), nil
+}
+
+func runToolCallingLoop(ctx context.Context, messages []OllamaChatMessage, tools []OllamaToolDef, model, fallbackModel string, userID int64, statusFn func(string)) (*OllamaChatResponse, int, error) {
+	totalToolCalls := 0
+
+	for i := 0; i < maxToolIterations; i++ {
+		if ctx.Err() != nil {
+			return nil, totalToolCalls, ctx.Err()
+		}
+
+		resp, _, err := callOllamaChatWithFallback(messages, tools, model, fallbackModel)
+		if err != nil {
+			return nil, totalToolCalls, err
+		}
+
+		// No tool calls — done
+		if len(resp.Message.ToolCalls) == 0 {
+			return resp, totalToolCalls, nil
+		}
+
+		// Append assistant message (with tool_calls) to history
+		messages = append(messages, resp.Message)
+
+		// Execute each tool call and append results
+		for _, tc := range resp.Message.ToolCalls {
+			totalToolCalls++
+			log.Printf("🔧 Tool call: %s", tc.Function.Name)
+			if statusFn != nil {
+				statusFn(fmt.Sprintf("Querying: %s...", tc.Function.Name))
+			}
+
+			result, err := executeToolCall(ctx, userID, tc)
+			if err != nil {
+				result = fmt.Sprintf(`{"error": "%s"}`, err.Error())
+			}
+
+			messages = append(messages, OllamaChatMessage{
+				Role:    "tool",
+				Content: result,
+			})
+		}
+	}
+
+	return nil, totalToolCalls, fmt.Errorf("exceeded max tool iterations (%d)", maxToolIterations)
+}
+
+func runChatJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
+	var req ChatRequest
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
+		return
+	}
+
+	if req.Message == "" {
+		job.fail("Message is required")
+		return
+	}
+
+	userID := int64(1) // TODO: auth
+
+	job.updateStatus("processing", "Thinking...")
+
+	messages := []OllamaChatMessage{
+		{
+			Role: "system",
+			Content: `You are a wardrobe assistant for GoThreads. You help users with outfit suggestions, wardrobe analysis, and style advice.
+
+You have access to tools that let you query the user's wardrobe database. ALWAYS use the tools to look up actual wardrobe data — do not make assumptions about what items the user owns.
+
+When suggesting outfits:
+- Reference items by their actual names and IDs from the database
+- Explain why the items work well together (color coordination, style, occasion)
+- Consider wear history to suggest underutilized items
+
+Keep responses concise and conversational. Use the tools proactively — if the user asks about their wardrobe, query it first before answering.`,
+		},
+	}
+
+	// Append conversation history if provided
+	for _, msg := range req.History {
+		messages = append(messages, msg)
+	}
+
+	// Append the new user message
+	messages = append(messages, OllamaChatMessage{
+		Role:    "user",
+		Content: req.Message,
+	})
+
+	tools := getWardrobeTools()
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	start := time.Now()
+	resp, toolsUsed, err := runToolCallingLoop(ctx, messages, tools, cloudTextModel, textModel, userID,
+		func(status string) { job.updateStatus("processing", status) })
+	if err != nil {
+		job.fail("AI request failed: " + err.Error())
+		return
+	}
+
+	log.Printf("🤖 Chat complete in %v: %d tool calls made", time.Since(start), toolsUsed)
+
+	job.complete(ChatResponse{
+		Message:   resp.Message.Content,
+		ToolsUsed: toolsUsed,
+	})
 }

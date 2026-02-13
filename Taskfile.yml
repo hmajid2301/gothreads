@@ -232,12 +232,24 @@ tasks:
 
   # Mockup tasks
   "mockups:services":
-    desc: Start required services for mockups (postgres, rembg)
+    desc: Start required services for mockups (postgres, rembg, ollama)
     cmds:
-      - docker compose up -d postgres rembg
+      - docker compose up -d
+      - ollama serve &>/dev/null &
       - echo "⏳ Waiting for services to be ready..."
       - sleep 5
-      - echo "✅ Services started"
+      - echo "✅ Services started (ollama serve running in background)"
+
+  "ollama:pull":
+    desc: Pull all required Ollama models (local + cloud)
+    cmds:
+      - ollama pull llava:7b
+      - ollama pull llama3.2:3b
+      - ollama pull qwen3-vl:8b
+      - ollama pull qwen3-vl:235b-cloud
+      - ollama pull deepseek-v3.1:671b-cloud
+      - ollama pull deepseek-ocr:latest
+      - echo "✅ All models pulled"
 
   "mockups:dev":
     desc: Start mockup server with AI features and hot reload (port 8556)

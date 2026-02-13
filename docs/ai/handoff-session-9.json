@@ -1,0 +1,142 @@
+{
+  "session": 9,
+  "date": "2026-02-14",
+  "summary": "Fixed item-detail slow load (via.placeholder.com timeout), fixed try-on garment_image bug, rebuilt CatVTON Docker for true local inference, synced appData.items from API, improved outfit rating prompt, fixed outfit photo/edit.",
+
+  "architecture": {
+    "mockup_api": {
+      "path": "mockups/api/main.go",
+      "framework": "Go net/http",
+      "port": 8556,
+      "env_file": "mockups/api/.env (loaded via godotenv)"
+    },
+    "frontend": {
+      "js": "mockups/js/app.js",
+      "css": "mockups/css/style.css",
+      "pages": ["upload.html", "wardrobe.html", "item-detail.html", "outfit-builder.html", "outfits.html", "analytics.html", "calendar.html", "settings.html", "share.html"]
+    },
+    "database": {
+      "type": "PostgreSQL 18",
+      "port": 15432,
+      "connection": "postgres://postgres:postgres@localhost:15432/gothreads?sslmode=disable",
+      "schema_file": "mockups/api/db.go"
+    },
+    "storage": {
+      "type": "SeaweedFS (S3-compatible)",
+      "port": 8333,
+      "bucket": "gothreads"
+    },
+    "docker_compose": "docker-compose.yml"
+  },
+
+  "data_flow": {
+    "source_of_truth": "PostgreSQL via API at localhost:8556",
+    "item_sync": {
+      "function": "syncItemsFromAPI() in app.js",
+      "when": "Awaited at start of DOMContentLoaded, before any rendering",
+      "what": "Fetches GET /api/items, normalizes image_url→image, saves to appData.items in localStorage",
+      "why": "All item lookups (outfit rendering, picker, edit, calendar, analytics, etc.) use appData.items.find(). Without sync, items uploaded via API are invisible to the frontend."
+    },
+    "outfits": "Stored in localStorage (appData.outfits). Item references are integer IDs matching DB primary keys.",
+    "api_items_have": "id, name, description, category, price, brand, color, season, image_url, notes, wear_count, ai_analysis, tags",
+    "appData_items_have": "Same as API + image (normalized from image_url for backward compat with canvas/picker code)"
+  },
+
+  "ai_job_queue": {
+    "description": "Generic async job queue (from session 8). All AI ops go through POST/GET/DELETE /api/ai/jobs.",
+    "endpoints": {
+      "POST /api/ai/jobs": "Submit job by type, returns 202 + {id, status}",
+      "GET /api/ai/jobs/{id}": "SSE stream: status/result/error events",
+      "DELETE /api/ai/jobs/{id}": "Cancel via context"
+    },
+    "worker_types": ["analyze", "tags", "dress", "remove-bg", "tryon", "suggest-outfit", "color-match", "style-match", "rate-outfit", "wardrobe-gaps"],
+    "notification_panel": "#ai-job-notifications, bottom-right, slide-in cards with cancel button"
+  },
+
+  "virtual_tryon": {
+    "primary": {
+      "type": "HuggingFace Space (Gradio API)",
+      "space_url": "https://zhengchong-catvton.hf.space",
+      "status": "RUNTIME_ERROR as of 2026-02-14. Unreliable — owned by third party.",
+      "called_from": "Go via uploadToGradio + callGradioTryOn in main.go"
+    },
+    "fallback": {
+      "type": "Local CatVTON Docker service (CPU)",
+      "url": "http://localhost:8557",
+      "docker_service": "catvton (docker-compose.yml)",
+      "dockerfile": "mockups/catvton/Dockerfile",
+      "app": "mockups/catvton/app.py (FastAPI, local CatVTONPipeline inference)",
+      "catvton_repo": "mockups/catvton/CatVTON/ (cloned locally, COPY'd into image)",
+      "base_image": "python:3.11-slim with CPU-only PyTorch 2.1.2",
+      "dependencies": "diffusers 0.29.2, transformers 4.27.3, accelerate 0.31.0, huggingface_hub 0.23.4",
+      "model_weights": "Downloaded on first request into huggingface-cache Docker volume. ~5-8GB total (runwayml/stable-diffusion-inpainting, stabilityai/sd-vae-ft-mse, zhengchong/CatVTON).",
+      "first_run": "Will download models then run inference. Very slow on first use (~10-15 min). Subsequent runs use cached weights (~5 min CPU inference with 20 steps).",
+      "status": "Container rebuilt and running. Import test passes. Not yet tested end-to-end (model weights not yet downloaded)."
+    },
+    "frontend_flow": "handleTryOn() → submitAIJob('tryon', {person_image, garment_image, cloth_type})"
+  },
+
+  "recent_changes_this_session": [
+    "Fixed item-detail.html slow load: replaced https://via.placeholder.com/400 (20s timeout) with empty src + CSS placeholder",
+    "Replaced all via.placeholder.com references in calendar.html and share.html with inline SVG data URIs",
+    "Fixed try-on garment_image bug: changed targetItem.image_url to targetItem.image || targetItem.image_url (canvas items use .image not .image_url)",
+    "Added syncItemsFromAPI() — fetches items from DB API, normalizes image_url→image, saves to appData.items",
+    "Made DOMContentLoaded handler async, awaits syncItemsFromAPI() before rendering",
+    "Reverted renderPickerItems back to sync (reads from appData.items which is now populated by sync)",
+    "Fixed outfit photos not showing on outfits page (items now in appData.items via sync)",
+    "Fixed outfit edit not loading items in outfit-builder (same root cause — appData.items was empty)",
+    "Improved rate-outfit prompt: includes item descriptions, forbids hallucinating garment features, forbids suggesting to remove items from outfit",
+    "Rebuilt CatVTON Docker container for true local inference (was using gradio_client wrapper to HF Space)",
+    "Cloned CatVTON repo locally to avoid Docker DNS issues, COPY into image instead of git clone",
+    "Removed xformers (CUDA-only) from requirements, switched to opencv-python-headless",
+    "Model weights download deferred to first request (cached in huggingface-cache Docker volume)",
+    "Added .dockerignore for CatVTON build context"
+  ],
+
+  "key_functions": {
+    "app.js": {
+      "syncItemsFromAPI": "Fetches /api/items, normalizes image_url→image, populates appData.items. Called at DOMContentLoaded start.",
+      "submitAIJob": "Generic: POST /api/ai/jobs, creates notification, opens EventSource, returns Promise",
+      "handleTryOn": "Gets person_image from canvas bg (SVG→PNG conversion), garment_image from targetItem.image||image_url, submits tryon job",
+      "renderPickerItems": "Renders item picker from appData.items (now synced from API)",
+      "handleRateOutfit": "Sends items with description/ai_analysis to rate-outfit job"
+    },
+    "main.go": {
+      "runRateOutfitJob": "Includes item descriptions in prompt, instructs model not to hallucinate features or suggest removing items",
+      "runTryOnJob": "Tries HF Space → local Docker fallback"
+    },
+    "catvton/app.py": {
+      "get_pipeline": "Lazy-loads CatVTONPipeline from /app/catvton/model/pipeline.py, downloads weights on first call",
+      "try_on": "POST /api/tryon — decodes base64 images, runs local inference, returns base64 result"
+    }
+  },
+
+  "services": {
+    "mockup_api": { "port": 8556, "start": "task mockups:dev" },
+    "postgres": { "port": 15432, "docker": true },
+    "seaweedfs": { "port": 8333, "docker": true },
+    "ollama": { "port": 11434, "start": "ollama serve" },
+    "rembg": { "port": 5000, "docker": true },
+    "catvton": { "port": 8557, "docker": true, "note": "Rebuilt for local inference. First request downloads ~5-8GB models." },
+    "mock_oauth2": { "port": 8090, "docker": true }
+  },
+
+  "known_issues": {
+    "hf_space_down": "zhengchong-catvton.hf.space is in RUNTIME_ERROR state. Cannot be fixed (not our Space). Consider duplicating to own HF account.",
+    "catvton_first_run": "First try-on request will download ~5-8GB of model weights. Very slow. Subsequent requests use cached weights from huggingface-cache volume.",
+    "catvton_cpu_slow": "Local CatVTON on CPU takes 5+ minutes per try-on with 20 inference steps.",
+    "docker_dns": "Docker builds may fail with DNS/connection issues. CatVTON repo is now cloned locally and COPY'd to avoid this.",
+    "no_nvidia_gpu": "User's machine has no NVIDIA GPU. CatVTON runs CPU-only PyTorch.",
+    "svg_body_image": "Default mannequin is SVG. Try-on converts SVG to PNG via canvas element.",
+    "godotenv_unmaintained": "github.com/joho/godotenv is unmaintained. Consider replacing.",
+    "outfits_in_localstorage": "Outfits are stored in localStorage, not in the DB. If localStorage is cleared, outfits are lost. Consider migrating to API/DB."
+  },
+
+  "pending_work": {
+    "catvton_e2e_test": "CatVTON container rebuilt but model weights not yet downloaded. First try-on will trigger download. Needs end-to-end test.",
+    "outfit_api": "Outfits are still in localStorage. Should be migrated to a DB table with API endpoints for persistence.",
+    "godotenv_replacement": "Replace github.com/joho/godotenv with maintained alternative.",
+    "watermill_queue": "User mentioned using watermill library with postgres for async job queue (for real backend).",
+    "hf_space_alternative": "Duplicate CatVTON Space to own HF account for reliable cloud try-on, or find a working fork."
+  }
+}

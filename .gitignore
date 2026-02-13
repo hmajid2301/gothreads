@@ -26,6 +26,7 @@ pnpm-debug.log*
 
 # Environment & Secrets
 .env
+!.env.example
 .envrc
 !.envrc.example
 

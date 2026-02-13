@@ -28,7 +28,7 @@
 
         <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; margin-top: 2rem;">
           <div>
-            <img id="item-image-preview" src="https://via.placeholder.com/400" alt="Item" style="width: 100%; border-radius: 0.75rem;">
+            <img id="item-image-preview" src="" alt="Item" style="width: 100%; border-radius: 0.75rem; min-height: 200px; background: var(--warm-bg);">
             <div style="margin-top: 1rem; padding: 1rem; background: var(--warm-bg); border-radius: 0.5rem; text-align: center;">
               <p style="color: var(--text-neutral); font-size: 0.875rem;">
                 ✨ Background removed by AI
@@ -40,6 +40,11 @@
             <div class="form-group">
               <label>Item Name</label>
               <input type="text" id="item-name" placeholder="e.g., Blue Denim Jeans">
+            </div>
+
+            <div class="form-group">
+              <label>Description</label>
+              <textarea id="item-description" rows="3" placeholder="Detailed description of the item (fit, material, style, features)..."></textarea>
             </div>
 
             <div class="form-group">
@@ -124,9 +129,9 @@
         </div>
       </div>
 
-      <div id="style-matches-section" style="display: none;" class="card" style="margin-top: 1.5rem;">
+      <div id="style-matches-section" style="display: none; margin-top: 1.5rem;" class="card">
         <h2>✨ Items That Match Well</h2>
-        <div id="style-matches-grid" class="wardrobe-grid"></div>
+        <div id="style-matches-grid" class="grid grid-3"></div>
       </div>
     </div>
   </main>

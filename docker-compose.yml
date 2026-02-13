@@ -64,6 +64,14 @@ services:
     environment:
       MODEL: u2net
 
+  catvton:
+    build: ./mockups/catvton
+    ports:
+      - "8557:8557"
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+
 volumes:
   postgres-data:
   seaweedfs-data:
+  huggingface-cache:

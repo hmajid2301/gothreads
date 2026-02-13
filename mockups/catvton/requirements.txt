@@ -1,0 +1,14 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+Pillow==10.4.0
+python-multipart==0.0.9
+diffusers==0.29.2
+transformers==4.27.3
+accelerate==0.31.0
+scipy==1.13.1
+scikit-image==0.24.0
+opencv-python-headless==4.10.0.84
+huggingface_hub==0.23.4
+numpy==1.26.4
+tqdm==4.66.4
+packaging

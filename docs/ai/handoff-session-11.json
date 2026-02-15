@@ -1,0 +1,308 @@
+{
+  "session": 11,
+  "date": "2026-02-15",
+  "summary": "Attempted FASHN VTON 1.5 integration (failed due to API access disabled), switched to ajay-projects/vton-backend (works but GPU quota exhausted), fixed local CatVTON missing NSFW placeholder, updated Dockerfile to git clone CatVTON and auto-create placeholder, added progress updates for local processing, cleaned up navigation (removed Upload/Analytics from nav, kept in home page), added pending tasks to docs.",
+
+  "architecture": {
+    "mockup_api": {
+      "path": "mockups/api/main.go",
+      "framework": "Go net/http",
+      "port": 8556,
+      "env_file": "mockups/api/.env (loaded via godotenv)"
+    },
+    "frontend": {
+      "js": "mockups/js/app.js",
+      "css": "mockups/css/style.css",
+      "pages": ["index.html", "wardrobe.html", "item-detail.html", "outfit-builder.html", "outfits.html", "calendar.html", "settings.html", "upload.html"]
+    },
+    "database": {
+      "type": "PostgreSQL 18",
+      "port": 15432,
+      "connection": "postgres://postgres:postgres@localhost:15432/gothreads?sslmode=disable",
+      "schema_file": "mockups/api/db.go",
+      "migrations": [
+        "backend/store/db/migrations/001_initial_schema.sql",
+        "backend/store/db/migrations/002_add_item_description.sql",
+        "backend/store/db/migrations/003_add_location.sql"
+      ]
+    },
+    "storage": {
+      "type": "SeaweedFS (S3-compatible)",
+      "port": 8333,
+      "bucket": "gothreads"
+    },
+    "docker_compose": "docker-compose.yml"
+  },
+
+  "data_flow": {
+    "source_of_truth": "PostgreSQL via API at localhost:8556",
+    "item_sync": {
+      "function": "syncItemsFromAPI() in app.js",
+      "when": "Awaited at start of DOMContentLoaded",
+      "what": "Fetches GET /api/items, normalizes image_url→image, saves to appData.items"
+    },
+    "outfit_sync": {
+      "function": "syncOutfitsFromAPI() in app.js",
+      "when": "After syncItemsFromAPI()",
+      "what": "Fetches GET /api/outfits, normalizes to localStorage format"
+    },
+    "calendar_sync": {
+      "function": "syncCalendarFromAPI() in app.js",
+      "when": "After syncOutfitsFromAPI()",
+      "what": "Fetches GET /api/calendar, converts to date-keyed object"
+    },
+    "migration": {
+      "function": "migrateLocalStorageToAPI() in app.js",
+      "when": "Once before sync functions",
+      "what": "One-time migration with gothreads_migrated_to_api flag"
+    }
+  },
+
+  "api_endpoints": {
+    "items": {
+      "GET /api/items": "List all items",
+      "GET /api/items/{id}": "Get single item",
+      "POST /api/items": "Create item (multipart)",
+      "PUT /api/items/{id}": "Update item",
+      "DELETE /api/items/{id}": "Delete item"
+    },
+    "outfits": {
+      "GET /api/outfits": "List outfits with item_ids",
+      "GET /api/outfits/{id}": "Get outfit with items+positions",
+      "POST /api/outfits": "Create outfit with positions",
+      "PUT /api/outfits/{id}": "Update outfit",
+      "DELETE /api/outfits/{id}": "Delete outfit"
+    },
+    "calendar": {
+      "GET /api/calendar": "List events, ?start=&end= filters",
+      "POST /api/calendar": "Upsert event (ON CONFLICT)",
+      "DELETE /api/calendar/{date}": "Delete event"
+    },
+    "wear": {
+      "POST /api/wear": "Log wear for outfit+items",
+      "GET /api/wear": "Get history, ?item_id=&outfit_id=&days="
+    },
+    "ai_jobs": {
+      "POST /api/ai/jobs": "Submit job, returns {id, status}",
+      "GET /api/ai/jobs/{id}": "SSE stream: status/result/error",
+      "DELETE /api/ai/jobs/{id}": "Cancel via context"
+    }
+  },
+
+  "ai_job_queue": {
+    "worker_types": ["analyze", "tags", "dress", "remove-bg", "tryon", "suggest-outfit", "color-match", "style-match", "rate-outfit", "wardrobe-gaps", "chat"],
+    "chat_job": {
+      "type": "chat",
+      "description": "Uses Ollama /api/chat with tool calling (10 DB query tools)",
+      "models": ["llama3.2:3b", "qwen3-vl:8b", "deepseek-v3.1:671b-cloud"],
+      "tools": ["list_items", "get_item", "list_outfits", "get_outfit", "get_wardrobe_stats", "get_wear_history", "get_most_worn", "get_least_worn", "get_calendar_events", "search_items"]
+    }
+  },
+
+  "virtual_tryon": {
+    "primary_attempted": {
+      "name": "FASHN VTON 1.5 (official)",
+      "url": "https://fashn-ai-fashn-vton-1-5.hf.space",
+      "status": "FAILED - 405 Method Not Allowed on all API endpoints",
+      "reason": "HF Space has API access disabled or misconfigured",
+      "attempted_endpoints": ["/call/predict", "/call/0", "/call/try_on"],
+      "note": "Both fashn-ai and merve duplicate Spaces have same issue"
+    },
+    "current_cloud": {
+      "name": "StableVITON Backend",
+      "url": "https://ajay-projects-vton-backend.hf.space",
+      "status": "WORKS but GPU quota exhausted",
+      "endpoint": "POST /tryon (multipart form-data)",
+      "inputs": "person_image, garment_image (files)",
+      "health_check": "GET /health → {status, model_connected, timestamp}",
+      "error": "You have exceeded your GPU quota (60s requested vs. 0s left)",
+      "note": "Free tier HF Zero GPU. Works perfectly when quota available. Resets periodically."
+    },
+    "local_fallback": {
+      "type": "CatVTON Docker (CPU)",
+      "url": "http://localhost:8557",
+      "docker_service": "catvton (docker-compose.yml)",
+      "dockerfile": "mockups/catvton/Dockerfile",
+      "app": "mockups/catvton/app.py (FastAPI)",
+      "status": "WORKING",
+      "performance": "~5 minutes per inference on CPU",
+      "model_weights": "Downloaded on first request, cached in huggingface-cache volume",
+      "recent_fixes": [
+        "Created NSFW placeholder image (was missing, caused 500 errors)",
+        "Updated Dockerfile to git clone CatVTON during build (not local copy)",
+        "Added create_nsfw_placeholder.py script",
+        "Added progress updates every 10 seconds during processing"
+      ]
+    },
+    "implementation": {
+      "backend_function": "callVtonBackend() in main.go",
+      "worker": "runTryOnJob() in main.go",
+      "flow": "Try cloud backend → on fail, fallback to local CatVTON",
+      "progress_updates": "Goroutine sends status every 10s: 'Still processing locally... (Xs elapsed)'",
+      "frontend": "handleTryOn() in app.js → submitAIJob('tryon') → SSE for updates"
+    }
+  },
+
+  "recent_changes_this_session": [
+    "Attempted FASHN VTON 1.5 integration - failed (API disabled on HF Space)",
+    "Switched to ajay-projects/vton-backend (StableVITON) - works but GPU quota issue",
+    "Implemented callVtonBackend() with multipart form upload and proper Content-Type headers",
+    "Fixed local CatVTON missing /app/catvton/resource/img/NSFW.jpg (500 error)",
+    "Created NSFW placeholder image manually in running container",
+    "Updated Dockerfile to git clone CatVTON during build (removed local COPY)",
+    "Created create_nsfw_placeholder.py script for automatic NSFW image creation",
+    "Updated .gitignore to exclude mockups/catvton/CatVTON/",
+    "Updated .dockerignore to exclude CatVTON/ (cloned in build instead)",
+    "Added progress updates to local CatVTON processing (10 second intervals)",
+    "Added detailed logging for local CatVTON (request, response, errors)",
+    "Removed 'Upload' from all navigation bars",
+    "Removed 'Analytics' from navigation bars (will move to Settings page later)",
+    "Updated navigation structure: Home | Wardrobe | Outfits | Calendar | Settings",
+    "Added Calendar to home page Quick Actions with emoji: 📷 Upload | ✨ Create Outfit | 📅 Calendar",
+    "Added Task #22: Fix virtual try-on (VTON) feature",
+    "Added Task #23: Implement upload entire outfit and auto-segment pieces",
+    "Updated docs/ai/IMPLEMENTATION_TASKS.md with Phase 13: Pending Features",
+    "Documented VTON current state and options in implementation tasks",
+    "Documented outfit auto-segmentation feature with full implementation plan"
+  ],
+
+  "key_functions": {
+    "main.go": {
+      "callVtonBackend": "POSTs multipart form to StableVITON /tryon endpoint",
+      "runTryOnJob": "Tries cloud backend → falls back to local CatVTON, sends progress updates",
+      "runChatJob": "AI tool calling with 10 DB query functions",
+      "toolListItems": "Dynamic WHERE with filters for AI",
+      "toolGetWardrobeStats": "Aggregated stats for AI"
+    },
+    "app.js": {
+      "handleTryOn": "Gets person/garment images, submits tryon job",
+      "syncItemsFromAPI": "Fetches /api/items, normalizes to localStorage",
+      "syncOutfitsFromAPI": "Fetches /api/outfits, normalizes",
+      "syncCalendarFromAPI": "Fetches /api/calendar, converts to object",
+      "sendChatMessage": "Submits chat job with history, uses SSE",
+      "logWearEvent": "POST /api/wear, updates wear counts"
+    },
+    "Dockerfile (catvton)": {
+      "git_clone": "RUN git clone https://github.com/Zheng-Chong/CatVTON.git /app/catvton",
+      "create_placeholder": "RUN python3 create_nsfw_placeholder.py → creates /app/catvton/resource/img/NSFW.jpg"
+    }
+  },
+
+  "services": {
+    "mockup_api": { "port": 8556, "start": "task mockups:dev" },
+    "postgres": { "port": 15432, "docker": true },
+    "seaweedfs": { "port": 8333, "docker": true },
+    "ollama": { "port": 11434, "start": "ollama serve" },
+    "rembg": { "port": 5000, "docker": true },
+    "catvton": {
+      "port": 8557,
+      "docker": true,
+      "status": "WORKING - NSFW placeholder fixed",
+      "note": "Rebuilt container with git clone + auto-created NSFW.jpg"
+    },
+    "mock_oauth2": { "port": 8090, "docker": true }
+  },
+
+  "known_issues": {
+    "fashn_vton_api_disabled": "FASHN VTON 1.5 HF Spaces (both official and merve) have API access disabled. Returns 405 on all /call/* endpoints.",
+    "vton_backend_gpu_quota": "ajay-projects/vton-backend works perfectly but frequently out of GPU quota on HF Zero tier. Error: 'You have exceeded your GPU quota (60s requested vs. 0s left)'",
+    "local_catvton_slow": "Local CatVTON on CPU takes ~5 minutes per try-on. Progress updates implemented to show it's working.",
+    "no_nvidia_gpu": "User's machine has no NVIDIA GPU. CatVTON runs CPU-only PyTorch.",
+    "godotenv_unmaintained": "github.com/joho/godotenv is unmaintained. Consider replacing."
+  },
+
+  "pending_work": {
+    "vton_cloud_solution": "Need reliable cloud VTON. Options: (1) Find working free HF Space, (2) Use FASHN paid API ($0.075/image), (3) Deploy own Space to HF, (4) Optimize local CatVTON with GPU support.",
+    "outfit_auto_segmentation": "New feature to upload full outfit photo and auto-segment into individual pieces. Needs: segmentation model research (YOLO, Detectron2, Fashionpedia), UI for preview/adjust, batch item creation API, outfit set linking.",
+    "analytics_to_settings": "Move Analytics from nav to Settings page as requested by user.",
+    "test_chat_ai_tools": "AI chat with tool calling implemented but needs end-to-end testing with populated DB.",
+    "godotenv_replacement": "Replace github.com/joho/godotenv with maintained alternative.",
+    "watermill_queue": "User mentioned using watermill library with postgres for async job queue (for real backend)."
+  },
+
+  "navigation_structure": {
+    "top_nav": ["Home", "Wardrobe", "Outfits", "Calendar", "Settings"],
+    "home_quick_actions": ["📷 Upload New Item", "✨ Create Outfit", "📅 View Calendar"],
+    "removed_from_nav": ["Upload", "Analytics"],
+    "note": "Upload and Calendar accessible from home page Quick Actions. Analytics will be moved to Settings page."
+  },
+
+  "docker_catvton_setup": {
+    "base_image": "python:3.11-slim",
+    "dependencies": "CPU-only PyTorch 2.1.2, diffusers, transformers, accelerate, huggingface_hub, PIL",
+    "catvton_source": "git clone https://github.com/Zheng-Chong/CatVTON.git (done during Docker build)",
+    "nsfw_placeholder": "Auto-created via create_nsfw_placeholder.py → /app/catvton/resource/img/NSFW.jpg",
+    "model_cache": "huggingface-cache Docker volume → /root/.cache/huggingface",
+    "first_run": "Downloads ~5-8GB model weights on first try-on request",
+    "dockerfile_location": "mockups/catvton/Dockerfile",
+    "helper_script": "mockups/catvton/create_nsfw_placeholder.py"
+  },
+
+  "task_list": {
+    "task_22": {
+      "subject": "Fix virtual try-on (VTON) feature",
+      "status": "pending",
+      "priority": "HIGH",
+      "description": "Find working cloud VTON or optimize local. Current: cloud out of GPU quota, local works but slow (~5 min)."
+    },
+    "task_23": {
+      "subject": "Implement upload entire outfit and auto-segment pieces",
+      "status": "pending",
+      "priority": "MEDIUM",
+      "description": "Upload one outfit photo, AI segments into separate items (top, bottom, shoes, etc.), auto-detect categories, remove bg, create linked items."
+    }
+  },
+
+  "files_modified_this_session": [
+    "mockups/api/main.go - VTON backend switching, progress updates, detailed logging",
+    "mockups/catvton/Dockerfile - git clone CatVTON, auto-create NSFW placeholder",
+    "mockups/catvton/.dockerignore - Exclude CatVTON/ directory",
+    "mockups/catvton/create_nsfw_placeholder.py - NEW FILE - Creates NSFW.jpg",
+    ".gitignore - Exclude mockups/catvton/CatVTON/",
+    "mockups/index.html - Updated nav, added Calendar to Quick Actions",
+    "mockups/wardrobe.html - Updated nav structure",
+    "mockups/outfits.html - Updated nav structure",
+    "mockups/calendar.html - Updated nav structure",
+    "mockups/settings.html - Updated nav structure",
+    "mockups/item-detail.html - Updated nav structure",
+    "mockups/outfit-builder.html - Updated nav structure",
+    "docs/ai/IMPLEMENTATION_TASKS.md - Added Phase 13: Pending Features with VTON and auto-segmentation tasks"
+  ],
+
+  "environment_variables": {
+    "current": {
+      "VTON_BACKEND_URL": "https://ajay-projects-vton-backend.hf.space",
+      "CATVTON_LOCAL_URL": "http://localhost:8557"
+    },
+    "legacy_removed": {
+      "CATVTON_SPACE_URL": "Was https://zhengchong-catvton.hf.space (down)",
+      "FASHN_SPACE_URL": "Was https://fashn-ai-fashn-vton-1-5.hf.space (API disabled)"
+    },
+    "potential_future": {
+      "FASHN_API_KEY": "If implementing FASHN paid API ($0.075/image, docs: https://docs.fashn.ai/)"
+    }
+  },
+
+  "vton_debugging_journey": {
+    "attempt_1": "Tried FASHN VTON 1.5 official Space → 405 on /call/try_on",
+    "attempt_2": "Fixed upload to use /gradio_api/upload with FileData format → still 405",
+    "attempt_3": "Tried /call/predict, /call/0 fallbacks → still 405",
+    "attempt_4": "Passed base64 data URIs directly in data array → still 405",
+    "attempt_5": "Checked merve's FASHN Space duplicate → same 405",
+    "conclusion": "Both FASHN Spaces have API access disabled (not our fault)",
+    "pivot": "Switched to ajay-projects/vton-backend (StableVITON)",
+    "issue_6": "Backend returned 400: Invalid file type",
+    "fix_6": "Added MIME type detection and explicit Content-Type headers with textproto.MIMEHeader",
+    "issue_7": "Backend accepted files but returned success=false with GPU quota error",
+    "resolution": "Cloud works when quota available, local fallback works but slow"
+  },
+
+  "local_catvton_debugging": {
+    "issue": "POST /api/tryon → 500: No such file or directory: '/app/catvton/resource/img/NSFW.jpg'",
+    "cause": "CatVTON safety checker needs NSFW placeholder image, was missing from Docker container",
+    "immediate_fix": "Created NSFW.jpg manually in running container via docker exec python3",
+    "permanent_fix": "Added create_nsfw_placeholder.py script, runs during Docker build",
+    "verification": "Rebuilt container, confirmed NSFW.jpg exists at /app/catvton/resource/img/NSFW.jpg",
+    "also_found": "Git clone during build also pulled other resource images (architecture.jpg, teaser.jpg, etc.)"
+  }
+}

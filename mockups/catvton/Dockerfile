@@ -14,10 +14,15 @@ RUN pip install --no-cache-dir \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy CatVTON repo (cloned locally to avoid Docker DNS issues)
-COPY CatVTON /app/catvton
+# Clone CatVTON repo
+RUN git clone https://github.com/Zheng-Chong/CatVTON.git /app/catvton
 
 COPY app.py .
+COPY create_nsfw_placeholder.py .
+
+# Create NSFW placeholder image (required by CatVTON safety checker)
+RUN mkdir -p /app/catvton/resource/img && \
+    python3 create_nsfw_placeholder.py
 
 # Model weights are downloaded on first request and cached in the
 # huggingface-cache Docker volume mounted at /root/.cache/huggingface.

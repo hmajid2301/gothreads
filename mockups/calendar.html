@@ -6,6 +6,27 @@
   <title>Outfit Calendar - go-threads</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
+    .month-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+    .month-nav h2 {
+      margin: 0;
+    }
+    .month-nav button {
+      background: var(--warm-bg);
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      font-size: 1.25rem;
+    }
+    .month-nav button:hover {
+      background: var(--primary);
+      color: white;
+    }
     .calendar-grid {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
@@ -27,18 +48,22 @@
       transition: all 0.2s;
       position: relative;
       min-height: 100px;
+      display: flex;
+      flex-direction: column;
     }
     .calendar-day:hover {
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      transform: translateY(-2px);
     }
     .calendar-day.today {
       border: 2px solid var(--primary);
+      background: var(--warm-bg);
     }
     .calendar-day.has-outfit {
       background: var(--warm-bg);
     }
     .calendar-day.other-month {
-      opacity: 0.4;
+      opacity: 0.3;
     }
     .day-number {
       font-weight: 600;
@@ -50,32 +75,23 @@
       display: flex;
       gap: 0.25rem;
       flex-wrap: wrap;
+      flex: 1;
+      align-items: flex-start;
     }
     .day-outfit-thumb {
-      width: 24px;
-      height: 24px;
+      width: 32px;
+      height: 32px;
       border-radius: 0.25rem;
       object-fit: cover;
+      border: 1px solid #eee;
     }
-    .month-nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 1.5rem;
-    }
-    .month-nav h2 {
-      margin: 0;
-    }
-    .month-nav button {
-      background: var(--warm-bg);
-      border: none;
-      padding: 0.5rem 1rem;
-      border-radius: 0.5rem;
-      cursor: pointer;
-      font-size: 1.25rem;
-    }
-    .month-nav button:hover {
-      background: var(--primary);
+    .day-event {
+      font-size: 0.7rem;
+      color: var(--text-neutral);
+      margin-top: 0.25rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .weather-badge {
       position: absolute;
@@ -92,10 +108,8 @@
       <nav>
         <a href="index.html">Home</a>
         <a href="wardrobe.html">Wardrobe</a>
-        <a href="upload.html">Upload</a>
         <a href="outfits.html">Outfits</a>
         <a href="calendar.html" class="active">Calendar</a>
-        <a href="analytics.html">Analytics</a>
         <a href="settings.html">Settings</a>
       </nav>
     </div>
@@ -120,138 +134,7 @@
           <div class="calendar-header">Sat</div>
 
           <div id="calendar-days">
-          <!-- Dynamically populated by JavaScript -->
-          <div class="calendar-day other-month">
-            <span class="day-number">26</span>
-          </div>
-          <div class="calendar-day other-month">
-            <span class="day-number">27</span>
-          </div>
-          <div class="calendar-day other-month">
-            <span class="day-number">28</span>
-          </div>
-          <div class="calendar-day other-month">
-            <span class="day-number">29</span>
-          </div>
-          <div class="calendar-day other-month">
-            <span class="day-number">30</span>
-          </div>
-          <div class="calendar-day other-month">
-            <span class="day-number">31</span>
-          </div>
-
-          <!-- Week 2 -->
-          <div class="calendar-day has-outfit" onclick="openDayModal(1)">
-            <span class="day-number">1</span>
-            <span class="weather-badge">☀️</span>
-            <div class="day-outfit">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect fill='%234A90E2' width='24' height='24'/%3E%3C/svg%3E" class="day-outfit-thumb">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect fill='%23F5F5F5' width='24' height='24'/%3E%3C/svg%3E" class="day-outfit-thumb">
-            </div>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(2)">
-            <span class="day-number">2</span>
-            <span class="weather-badge">🌤️</span>
-          </div>
-          <div class="calendar-day has-outfit" onclick="openDayModal(3)">
-            <span class="day-number">3</span>
-            <span class="weather-badge">⛅</span>
-            <div class="day-outfit">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect fill='%23000000' width='24' height='24'/%3E%3C/svg%3E" class="day-outfit-thumb">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect fill='%2334495E' width='24' height='24'/%3E%3C/svg%3E" class="day-outfit-thumb">
-            </div>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(4)">
-            <span class="day-number">4</span>
-            <span class="weather-badge">🌧️</span>
-          </div>
-          <div class="calendar-day has-outfit" onclick="openDayModal(5)">
-            <span class="day-number">5</span>
-            <span class="weather-badge">☀️</span>
-            <div class="day-outfit">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect fill='%2395A5A6' width='24' height='24'/%3E%3C/svg%3E" class="day-outfit-thumb">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect fill='%234A90E2' width='24' height='24'/%3E%3C/svg%3E" class="day-outfit-thumb">
-            </div>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(6)">
-            <span class="day-number">6</span>
-            <span class="weather-badge">🌤️</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(7)">
-            <span class="day-number">7</span>
-            <span class="weather-badge">☀️</span>
-          </div>
-
-          <!-- Week 3 -->
-          <div class="calendar-day today has-outfit" onclick="openDayModal(8)">
-            <span class="day-number">8</span>
-            <span class="weather-badge">☀️</span>
-            <div class="day-outfit">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect fill='%23E74C3C' width='24' height='24'/%3E%3C/svg%3E" class="day-outfit-thumb">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect fill='%23F5F5F5' width='24' height='24'/%3E%3C/svg%3E" class="day-outfit-thumb">
-            </div>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(9)">
-            <span class="day-number">9</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(10)">
-            <span class="day-number">10</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(11)">
-            <span class="day-number">11</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(12)">
-            <span class="day-number">12</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(13)">
-            <span class="day-number">13</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(14)">
-            <span class="day-number">14</span>
-          </div>
-
-          <!-- Week 4 -->
-          <div class="calendar-day" onclick="openDayModal(15)">
-            <span class="day-number">15</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(16)">
-            <span class="day-number">16</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(17)">
-            <span class="day-number">17</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(18)">
-            <span class="day-number">18</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(19)">
-            <span class="day-number">19</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(20)">
-            <span class="day-number">20</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(21)">
-            <span class="day-number">21</span>
-          </div>
-
-          <!-- Week 5 -->
-          <div class="calendar-day" onclick="openDayModal(22)">
-            <span class="day-number">22</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(23)">
-            <span class="day-number">23</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(24)">
-            <span class="day-number">24</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(25)">
-            <span class="day-number">25</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(26)">
-            <span class="day-number">26</span>
-          </div>
-          <div class="calendar-day" onclick="openDayModal(27)">
-            <span class="day-number">27</span>
-          </div>
+            <!-- Dynamically populated by JavaScript -->
           </div>
         </div>
       </div>

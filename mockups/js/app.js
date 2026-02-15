@@ -3176,23 +3176,31 @@ function createCalendarDay(year, month, day, isOtherMonth, isToday = false) {
   dayEl.onclick = () => openDayModal(year, month, day);
 
   let outfitHTML = '';
-  if (event && event.outfitId) {
-    const outfit = appData.outfits.find(o => o.id == event.outfitId);
-    if (outfit) {
-      const items = outfit.itemIds.map(id => appData.items.find(i => i.id == id)).filter(Boolean).slice(0, 3);
-      outfitHTML = `
-        <div class="day-outfit">
-          ${items.map(item => `<img src="${item.image}" class="day-outfit-thumb" alt="${item.name}">`).join('')}
-        </div>
-      `;
+  let eventHTML = '';
+
+  if (event) {
+    if (event.outfitId) {
+      const outfit = appData.outfits.find(o => o.id == event.outfitId);
+      if (outfit) {
+        const items = outfit.itemIds.map(id => appData.items.find(i => i.id == id)).filter(Boolean).slice(0, 3);
+        outfitHTML = `
+          <div class="day-outfit">
+            ${items.map(item => `<img src="${item.image}" class="day-outfit-thumb" alt="${item.name}" title="${item.name}">`).join('')}
+          </div>
+        `;
+      }
+    }
+
+    if (event.eventName) {
+      eventHTML = `<div class="day-event">${event.eventName}</div>`;
     }
   }
 
   dayEl.innerHTML = `
     <span class="day-number">${day}</span>
     ${event && event.weather ? `<span class="weather-badge">${event.weather}</span>` : ''}
-    ${event && event.location ? `<span style="font-size: 0.6rem; color: var(--text-neutral); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📍${event.location}</span>` : ''}
     ${outfitHTML}
+    ${eventHTML}
   `;
 
   return dayEl;
@@ -3211,10 +3219,23 @@ function openDayModal(year, month, day) {
     `<option value="${outfit.id}" ${event.outfitId == outfit.id ? 'selected' : ''}>${outfit.name}</option>`
   ).join('');
 
+  // Build buttons array
+  const buttons = [{ label: 'Cancel', onclick: 'closeModal()' }];
+
+  // Add "View Outfit" button if outfit is selected
+  if (event.outfitId) {
+    buttons.push({
+      label: 'View Outfit',
+      onclick: `closeModal(); viewOutfitFromCalendar(${event.outfitId})`
+    });
+  }
+
+  buttons.push({ label: 'Save', primary: true, onclick: `saveCalendarOutfit('${dateStr}')` });
+
   showModal(`Plan Outfit for ${month + 1}/${day}/${year}`, `
     <div class="form-group">
       <label>Select Outfit</label>
-      <select id="calendar-outfit-select">
+      <select id="calendar-outfit-select" onchange="updateViewOutfitButton()">
         <option value="">No outfit planned</option>
         ${outfitsOptions}
       </select>
@@ -3243,10 +3264,12 @@ function openDayModal(year, month, day) {
         ✨ Get AI Outfit Suggestions
       </button>
     ` : ''}
-  `, [
-    { label: 'Cancel', onclick: 'closeModal()' },
-    { label: 'Save', primary: true, onclick: `saveCalendarOutfit('${dateStr}')` }
-  ]);
+  `, buttons);
+}
+
+function viewOutfitFromCalendar(outfitId) {
+  // Navigate to outfits page with the outfit ID
+  window.location.href = `outfits.html?outfit=${outfitId}`;
 }
 
 async function saveCalendarOutfit(dateStr) {

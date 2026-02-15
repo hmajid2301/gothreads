@@ -79,3 +79,6 @@ logs/
 *.tmp
 *.temp
 .cache/
+
+# CatVTON (cloned during Docker build, not committed)
+mockups/catvton/CatVTON/

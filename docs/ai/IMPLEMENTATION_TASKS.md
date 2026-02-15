@@ -537,3 +537,99 @@ bun install
 **Reference Projects**:
 - go-routinely (Go patterns, migrations, testing)
 - Stylebook, Whering, Twelve70 (UX inspiration)
+
+---
+
+## Phase 13: Pending Features
+
+### Virtual Try-On (VTON) Feature - HIGH PRIORITY
+**Status**: Partially implemented but needs fixing
+
+**Current State**:
+- Cloud backend: HuggingFace Space (ajay-projects/vton-backend) works but frequently out of GPU quota
+- Local fallback: CatVTON Docker service works but very slow (~5 minutes on CPU)
+- Progress updates: Implemented (every 10 seconds)
+- NSFW placeholder: Created in Docker build process
+
+**Tasks**:
+- [ ] Find reliable free HuggingFace Space for VTON with available GPU quota
+- [ ] OR: Implement FASHN paid API integration ($0.075/image, 10 free credits)
+  - API docs: https://docs.fashn.ai/
+  - Endpoint: POST to FASHN API with model_name='tryon-v1.6'
+  - Add FASHN_API_KEY to environment config
+- [ ] OR: Deploy own VTON Space to HuggingFace account with personal GPU quota
+- [ ] OR: Optimize local CatVTON (add GPU support, reduce inference steps)
+- [ ] Add better progress feedback (show inference steps, estimated time remaining)
+- [ ] Add retry mechanism for quota errors with exponential backoff
+- [ ] Consider implementing queue system for batch processing when quota limited
+
+**Files to modify**:
+- `mockups/api/main.go` - callVtonBackend(), runTryOnJob()
+- `mockups/api/.env.example` - Add FASHN_API_KEY if implementing paid API
+- `mockups/js/app.js` - handleTryOn(), potentially add queue UI
+
+### Upload Full Outfit & Auto-Segmentation - MEDIUM PRIORITY
+**Status**: Not implemented
+
+**Feature Description**:
+Upload a single photo of a complete outfit (on model, mannequin, or flat lay) and automatically segment it into individual clothing pieces (top, bottom, shoes, accessories, etc.).
+
+**Tasks**:
+- [ ] Research clothing segmentation models:
+  - YOLO-based fashion detection models
+  - Detectron2 with fashion dataset
+  - Fashionpedia dataset/models
+  - ModaNet dataset/models
+  - DeepFashion2 segmentation models
+- [ ] Choose segmentation approach:
+  - Option A: Use HuggingFace Space with fashion segmentation model
+  - Option B: Deploy local model (CPU or GPU)
+  - Option C: Use third-party API (Clarifai, Google Vision, etc.)
+- [ ] Implement segmentation API endpoint:
+  - POST /api/segment-outfit
+  - Input: Full outfit image
+  - Output: Array of detected items with bounding boxes and categories
+- [ ] Update upload.html UI:
+  - Add "Upload Full Outfit" mode toggle
+  - Show detected pieces preview with category labels
+  - Allow user to adjust bounding boxes
+  - Allow user to remove/add detected pieces
+  - Show category dropdown for each piece
+- [ ] Implement cropping and processing pipeline:
+  - Extract each detected piece using bounding box
+  - Run background removal on each piece
+  - Generate AI tags and description for each piece
+  - Store outfit_set_id to link related items
+- [ ] Add batch item creation endpoint:
+  - POST /api/items/batch
+  - Create multiple items in single transaction
+  - Return array of created item IDs
+- [ ] Auto-create outfit from uploaded pieces:
+  - Option to automatically create outfit with all detected pieces
+  - Set item positions based on bounding box coordinates
+- [ ] Add outfit set management:
+  - Display items that are part of the same uploaded outfit
+  - Filter wardrobe by outfit set
+  - "View Original Photo" option to see full outfit
+
+**Files to create/modify**:
+- `mockups/api/main.go` - Add segmentOutfit(), batchCreateItems() endpoints
+- `mockups/upload.html` - Add upload mode toggle and preview UI
+- `mockups/js/app.js` - Add outfit segmentation handling
+- `mockups/css/style.css` - Add bounding box preview styles
+- Consider adding: `mockups/segment-outfit/` - Segmentation service (similar to catvton/)
+
+**Database schema additions**:
+```sql
+-- Add outfit_set_id to items table
+ALTER TABLE items ADD COLUMN outfit_set_id UUID;
+ALTER TABLE items ADD COLUMN original_outfit_image_url TEXT;
+CREATE INDEX idx_items_outfit_set ON items(outfit_set_id);
+```
+
+**Tech considerations**:
+- Segmentation latency: 5-30 seconds depending on model
+- May need GPU for reasonable performance
+- Consider queue system for batch processing
+- Edge cases: overlapping items, accessories, partial occlusion
+- Quality threshold for detection confidence (e.g., only accept >0.7 confidence)

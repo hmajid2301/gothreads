@@ -257,3 +257,15 @@ tasks:
     cmds:
       - task: mockups:services
       - air
+
+  "convert:avif":
+    desc: "Convert AVIF images to PNG (usage: task convert:avif -- input.avif)"
+    cmd: |
+      if [ -z "{{.CLI_ARGS}}" ]; then
+        echo "❌ Error: Please provide input AVIF file"
+        echo "Usage: task convert:avif -- input.avif"
+        exit 1
+      fi
+      INPUT="{{.CLI_ARGS}}"
+      OUTPUT="${INPUT%.avif}.png"
+      magick "$INPUT" "$OUTPUT" && echo "✅ Converted $INPUT → $OUTPUT"

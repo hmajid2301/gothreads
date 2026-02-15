@@ -32,7 +32,7 @@ const (
 	defaultSpatialModelCloud = "qwen3-vl:235b-cloud"
 	defaultTextModelCloud    = "deepseek-v3.1:671b-cloud"
 	defaultRembgURL          = "http://localhost:5000"
-	defaultFashnSpaceURL     = "https://fashn-ai-fashn-vton-1-5.hf.space"
+	defaultVtonBackendURL    = "https://hmajid2301-fashn-vton-1-5.hf.space"
 	defaultCatvtonLocalURL   = "http://localhost:8557"
 )
 
@@ -44,7 +44,7 @@ var (
 	cloudTextModel string
 	spatialModel   string
 	rembgURL          string
-	fashnSpaceURL     string
+	vtonBackendURL    string
 	catvtonLocalURL   string
 )
 
@@ -56,7 +56,7 @@ func init() {
 	visionModel = getEnv("OLLAMA_VISION_MODEL", defaultVisionModel)
 	textModel = getEnv("OLLAMA_TEXT_MODEL", defaultTextModel)
 	rembgURL = getEnv("REMBG_URL", defaultRembgURL)
-	fashnSpaceURL = getEnv("FASHN_SPACE_URL", defaultFashnSpaceURL)
+	vtonBackendURL = getEnv("VTON_BACKEND_URL", defaultVtonBackendURL)
 	catvtonLocalURL = getEnv("CATVTON_LOCAL_URL", defaultCatvtonLocalURL)
 
 	// Detect cloud models by checking if they're pulled in Ollama
@@ -514,7 +514,7 @@ func main() {
 	log.Printf("📐 Spatial model: %s", spatialModel)
 	log.Printf("💬 Cloud text model: %s", cloudTextModel)
 	log.Printf("🖼️  Rembg URL: %s", rembgURL)
-	log.Printf("🧥 FASHN VTON HF Space: %s", fashnSpaceURL)
+	log.Printf("🧥 FASHN VTON: %s", vtonBackendURL)
 	log.Printf("🧥 CatVTON Local fallback: %s", catvtonLocalURL)
 	log.Printf("")
 	log.Printf("Open http://localhost:%s/upload.html to test AI features", port)
@@ -1304,7 +1304,8 @@ func runRemoveBgJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	})
 }
 
-// uploadToGradio uploads a base64 image to a Gradio Space and returns the file reference.
+// uploadToGradio uploads a base64 image to a Gradio Space and returns a FileData reference.
+// Newer Gradio (>=4) uses /gradio_api/upload and expects FileData with meta._type.
 func uploadToGradio(spaceURL string, imageData string) (map[string]interface{}, error) {
 	raw := imageData
 	if idx := strings.Index(raw, ","); idx != -1 {
@@ -1325,11 +1326,30 @@ func uploadToGradio(spaceURL string, imageData string) (map[string]interface{}, 
 	part.Write(imgBytes)
 	writer.Close()
 
-	resp, err := http.Post(spaceURL+"/upload", writer.FormDataContentType(), &buf)
+	// Try /gradio_api/upload first (Gradio >= 4), fall back to /upload
+	uploadURL := spaceURL + "/gradio_api/upload"
+	resp, err := http.Post(uploadURL, writer.FormDataContentType(), &buf)
 	if err != nil {
 		return nil, fmt.Errorf("upload failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		// Rebuild buffer for retry with legacy /upload
+		buf.Reset()
+		writer = multipart.NewWriter(&buf)
+		part, _ = writer.CreateFormFile("files", "image.png")
+		part.Write(imgBytes)
+		writer.Close()
+
+		resp.Body.Close()
+		uploadURL = spaceURL + "/upload"
+		resp, err = http.Post(uploadURL, writer.FormDataContentType(), &buf)
+		if err != nil {
+			return nil, fmt.Errorf("upload failed: %w", err)
+		}
+		defer resp.Body.Close()
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1345,8 +1365,13 @@ func uploadToGradio(spaceURL string, imageData string) (map[string]interface{}, 
 		return nil, fmt.Errorf("upload returned empty result")
 	}
 
+	// Return Gradio FileData format with path only (url causes issues with FASHN Space)
+	filePath := uploadResult[0]
 	return map[string]interface{}{
-		"path": uploadResult[0],
+		"path": filePath,
+		"meta": map[string]interface{}{
+			"_type": "gradio.FileData",
+		},
 	}, nil
 }
 
@@ -1363,51 +1388,55 @@ func mapClothType(clothType string) string {
 	}
 }
 
-// callFashnTryOn calls the FASHN VTON 1.5 Gradio Space API.
-func callFashnTryOn(spaceURL, personImage, garmentImage, clothType string) (string, error) {
-	personRef, err := uploadToGradio(spaceURL, personImage)
+// callVtonBackend calls the FASHN VTON Gradio API (hmajid2301's Space).
+// Uses Gradio /gradio_api/call pattern with FileData format.
+func callVtonBackend(backendURL, personImage, garmentImage string) (string, error) {
+	// Upload images to Gradio and get file references
+	personRef, err := uploadToGradio(backendURL, personImage)
 	if err != nil {
 		return "", fmt.Errorf("person image upload: %w", err)
 	}
 
-	garmentRef, err := uploadToGradio(spaceURL, garmentImage)
+	garmentRef, err := uploadToGradio(backendURL, garmentImage)
 	if err != nil {
 		return "", fmt.Errorf("garment image upload: %w", err)
 	}
 
-	category := mapClothType(clothType)
-
-	// FASHN VTON 1.5 try_on endpoint:
-	// args: person_image, garment_image, category, photo_type, steps, guidance_scale, seed, segmentation_free
+	// Build Gradio API call payload
+	// /try_on params: person_image, garment_image, category, photo_type, steps, guidance, seed, segmentation_free
 	callPayload := map[string]interface{}{
 		"data": []interface{}{
-			personRef,   // Person Image
-			garmentRef,  // Garment Image
-			category,    // Category: tops, bottoms, one-pieces
-			"flat-lay",  // Photo Type: model or flat-lay (flat-lay for product shots)
-			50,          // Sampling Steps (10-50)
-			1.5,         // Guidance Scale (1.0-3.0)
+			personRef,   // Person Image (FileData)
+			garmentRef,  // Garment Image (FileData)
+			"tops",      // Category: tops, bottoms, one-pieces
+			"flat-lay",  // Photo Type: model or flat-lay
+			50,          // Sampling Steps
+			1.5,         // Guidance Scale
 			42,          // Seed
 			true,        // Segmentation Free
 		},
 	}
 
 	payloadBytes, _ := json.Marshal(callPayload)
-	resp, err := http.Post(spaceURL+"/call/try_on", "application/json", bytes.NewReader(payloadBytes))
-	if err != nil {
-		return "", fmt.Errorf("predict call failed: %w", err)
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("predict returned %d: %s", resp.StatusCode, string(body))
+	log.Printf("🧥 Calling FASHN VTON /gradio_api/call/try_on")
+
+	// POST to /gradio_api/call/try_on
+	callResp, err := http.Post(backendURL+"/gradio_api/call/try_on", "application/json", bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("gradio call failed: %w", err)
+	}
+	defer callResp.Body.Close()
+
+	if callResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(callResp.Body)
+		return "", fmt.Errorf("gradio call returned %d: %s", callResp.StatusCode, string(body))
 	}
 
 	var callResult struct {
 		EventID string `json:"event_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&callResult); err != nil {
+	if err := json.NewDecoder(callResp.Body).Decode(&callResult); err != nil {
 		return "", fmt.Errorf("failed to parse event_id: %w", err)
 	}
 
@@ -1417,67 +1446,115 @@ func callFashnTryOn(spaceURL, personImage, garmentImage, clothType string) (stri
 
 	log.Printf("🧥 FASHN VTON queued, event_id=%s", callResult.EventID)
 
-	resultURL := fmt.Sprintf("%s/call/try_on/%s", spaceURL, callResult.EventID)
+	// GET results via SSE stream
+	resultURL := fmt.Sprintf("%s/gradio_api/call/try_on/%s", backendURL, callResult.EventID)
 	resultResp, err := http.Get(resultURL)
 	if err != nil {
 		return "", fmt.Errorf("result stream failed: %w", err)
 	}
 	defer resultResp.Body.Close()
 
+	// Parse SSE stream for complete/error events with timeout
 	scanner := bufio.NewScanner(resultResp.Body)
 	scanner.Buffer(make([]byte, 0), 10*1024*1024)
 
-	var lastEvent string
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "event: ") {
-			lastEvent = strings.TrimPrefix(line, "event: ")
-		} else if strings.HasPrefix(line, "data: ") && lastEvent == "complete" {
-			dataStr := strings.TrimPrefix(line, "data: ")
+	resultChan := make(chan string, 1)
+	errorChan := make(chan error, 1)
 
-			var resultData []interface{}
-			if err := json.Unmarshal([]byte(dataStr), &resultData); err != nil {
-				return "", fmt.Errorf("failed to parse result data: %w", err)
+	go func() {
+		var lastEvent string
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "event: ") {
+				lastEvent = strings.TrimPrefix(line, "event: ")
+				log.Printf("🧥 SSE event: %s", lastEvent)
+			} else if strings.HasPrefix(line, "data: ") {
+				dataStr := strings.TrimPrefix(line, "data: ")
+
+				// Only log first 200 chars of data to avoid spam
+				logData := dataStr
+				if len(logData) > 200 {
+					logData = logData[:200] + "..."
+				}
+				log.Printf("🧥 SSE data (event=%s): %s", lastEvent, logData)
+
+				if lastEvent == "complete" {
+					var resultData []interface{}
+					if err := json.Unmarshal([]byte(dataStr), &resultData); err != nil {
+						errorChan <- fmt.Errorf("failed to parse result data: %w", err)
+						return
+					}
+
+					if len(resultData) == 0 {
+						errorChan <- fmt.Errorf("empty result data")
+						return
+					}
+
+					// Result is FileData object with url or path
+					resultMap, ok := resultData[0].(map[string]interface{})
+					if !ok {
+						errorChan <- fmt.Errorf("unexpected result format: %T", resultData[0])
+						return
+					}
+
+					imageURL := ""
+					if u, ok := resultMap["url"].(string); ok {
+						imageURL = u
+					} else if p, ok := resultMap["path"].(string); ok {
+						imageURL = backendURL + "/file=" + p
+					}
+
+					if imageURL == "" {
+						errorChan <- fmt.Errorf("no image URL in result: %v", resultMap)
+						return
+					}
+
+					log.Printf("🧥 Downloading result image from: %s", imageURL)
+
+					// Download the result image
+					imgResp, err := http.Get(imageURL)
+					if err != nil {
+						errorChan <- fmt.Errorf("failed to download result: %w", err)
+						return
+					}
+					defer imgResp.Body.Close()
+
+					imgBytes, err := io.ReadAll(imgResp.Body)
+					if err != nil {
+						errorChan <- fmt.Errorf("failed to read result image: %w", err)
+						return
+					}
+
+					log.Printf("🧥 FASHN VTON complete, downloaded %d bytes", len(imgBytes))
+					resultChan <- "data:image/png;base64," + base64.StdEncoding.EncodeToString(imgBytes)
+					return
+				} else if lastEvent == "error" {
+					// Don't fail on null errors - might be transient, wait for more events
+					if dataStr == "null" || dataStr == "" {
+						log.Printf("⚠ Received null/empty error from Gradio, waiting for more events...")
+						continue
+					}
+					errorChan <- fmt.Errorf("gradio error: %s", dataStr)
+					return
+				}
 			}
-
-			if len(resultData) == 0 {
-				return "", fmt.Errorf("empty result data")
-			}
-
-			resultMap, ok := resultData[0].(map[string]interface{})
-			if !ok {
-				return "", fmt.Errorf("unexpected result format: %T", resultData[0])
-			}
-
-			imageURL := ""
-			if u, ok := resultMap["url"].(string); ok {
-				imageURL = u
-			} else if p, ok := resultMap["path"].(string); ok {
-				imageURL = spaceURL + "/file=" + p
-			}
-
-			if imageURL == "" {
-				return "", fmt.Errorf("no image URL in result: %v", resultMap)
-			}
-
-			imgResp, err := http.Get(imageURL)
-			if err != nil {
-				return "", fmt.Errorf("failed to download result: %w", err)
-			}
-			defer imgResp.Body.Close()
-
-			imgBytes, err := io.ReadAll(imgResp.Body)
-			if err != nil {
-				return "", fmt.Errorf("failed to read result image: %w", err)
-			}
-
-			return "data:image/png;base64," + base64.StdEncoding.EncodeToString(imgBytes), nil
-		} else if strings.HasPrefix(line, "data: ") && lastEvent == "error" {
-			return "", fmt.Errorf("gradio error: %s", strings.TrimPrefix(line, "data: "))
 		}
-	}
 
-	return "", fmt.Errorf("no complete event received from Gradio")
+		if err := scanner.Err(); err != nil {
+			errorChan <- fmt.Errorf("scanner error: %w", err)
+		} else {
+			errorChan <- fmt.Errorf("no complete event received from Gradio")
+		}
+	}()
+
+	select {
+	case result := <-resultChan:
+		return result, nil
+	case err := <-errorChan:
+		return "", err
+	case <-time.After(60 * time.Second):
+		return "", fmt.Errorf("timeout waiting for Gradio response (60s)")
+	}
 }
 
 // sendSSE writes a server-sent event to the response writer and flushes.
@@ -1512,7 +1589,7 @@ func runTryOnJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 		return
 	}
 
-	resultImage, err := callFashnTryOn(fashnSpaceURL, req.PersonImage, req.GarmentImage, req.ClothType)
+	resultImage, err := callVtonBackend(vtonBackendURL, req.PersonImage, req.GarmentImage)
 
 	if err == nil {
 		log.Printf("☁️ FASHN VTON try-on complete in %v", time.Since(start))
@@ -1528,12 +1605,11 @@ func runTryOnJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	job.updateStatus("processing", "⚠️ Cloud unavailable, falling back to local model...")
 
 	if catvtonLocalURL == "" {
-		job.fail("Virtual try-on failed: " + err.Error())
+		job.fail("Virtual try-on unavailable (no cloud or local service)")
 		return
 	}
 
-	log.Printf("🔄 Falling back to local CatVTON at %s", catvtonLocalURL)
-	job.updateStatus("processing", "🖥️ Running locally on CPU (this may take 5+ minutes)...")
+	log.Printf("🔄 Using local CatVTON at %s", catvtonLocalURL)
 
 	localPayload, _ := json.Marshal(map[string]string{
 		"person_image":  req.PersonImage,
@@ -1544,10 +1620,33 @@ func runTryOnJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	localReq, _ := http.NewRequestWithContext(ctx, "POST", catvtonLocalURL+"/api/tryon", bytes.NewReader(localPayload))
 	localReq.Header.Set("Content-Type", "application/json")
 
-	longClient := &http.Client{Timeout: 10 * time.Minute}
+	log.Printf("🧥 Sending to local CatVTON: %d bytes payload", len(localPayload))
+
+	// Send periodic progress updates while waiting
+	done := make(chan bool)
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		elapsed := 0
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				elapsed += 10
+				job.updateStatus("processing", fmt.Sprintf("🖥️ Still processing locally... (%ds elapsed)", elapsed))
+			}
+		}
+	}()
+
+	// No hard timeout — rely on ctx cancellation (user can cancel via SSE job queue)
+	longClient := &http.Client{}
 	localResp, localErr := longClient.Do(localReq)
+	close(done) // Stop progress updates
 	if localErr != nil {
+		log.Printf("❌ Local CatVTON request failed: %v", localErr)
 		if ctx.Err() != nil {
+			log.Printf("❌ Context cancelled: %v", ctx.Err())
 			return
 		}
 		job.fail("Virtual try-on failed (both cloud and local): " + localErr.Error())
@@ -1555,18 +1654,25 @@ func runTryOnJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	}
 	defer localResp.Body.Close()
 
+	log.Printf("🧥 Local CatVTON response: status=%d", localResp.StatusCode)
+
 	body, _ := io.ReadAll(localResp.Body)
+	log.Printf("🧥 Local CatVTON response body: %d bytes", len(body))
+
 	if localResp.StatusCode != http.StatusOK {
-		job.fail(fmt.Sprintf("Local try-on failed (status %d)", localResp.StatusCode))
+		log.Printf("❌ Local CatVTON error response: %s", string(body))
+		job.fail(fmt.Sprintf("Local try-on failed (status %d): %s", localResp.StatusCode, string(body)))
 		return
 	}
 
 	var result TryOnResponse
 	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("❌ Failed to parse local response: %v, body: %s", err, string(body))
 		job.fail("Failed to parse local result: " + err.Error())
 		return
 	}
 
+	log.Printf("🧥 Local CatVTON result: has_image=%v, image_len=%d", result.Image != "", len(result.Image))
 	log.Printf("🧥 Local CatVTON try-on complete in %v", time.Since(start))
 	job.complete(&result)
 }

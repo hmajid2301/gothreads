@@ -167,6 +167,19 @@
     document.addEventListener('DOMContentLoaded', () => {
       checkAIStatus();
       initChat();
+
+      // Auto-trigger AI if coming from outfits page
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('ai') === 'true') {
+        // Small delay to ensure chat is initialized
+        setTimeout(() => {
+          const chatInput = document.getElementById('chat-input');
+          if (chatInput && aiAvailable) {
+            chatInput.value = "Suggest a complete outfit for me based on casual occasion and today's weather";
+            sendChatMessage();
+          }
+        }, 500);
+      }
     });
   </script>
 </body>

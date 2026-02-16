@@ -445,6 +445,26 @@ type ItemPosition struct {
 	Z  int     `json:"z"` // layer order
 }
 
+// DetectOutfitItemsRequest for detecting multiple clothing items in one photo
+type DetectOutfitItemsRequest struct {
+	Image string `json:"image"` // base64 encoded image
+}
+
+// DetectOutfitItemsResponse returns detected clothing items
+type DetectOutfitItemsResponse struct {
+	Items       []DetectedItem `json:"items"`
+	Count       int            `json:"count"`
+	Description string         `json:"description"`
+	RawResponse string         `json:"raw_response,omitempty"`
+}
+
+type DetectedItem struct {
+	Category    string `json:"category"`    // tops, bottoms, shoes, accessories, outerwear
+	Description string `json:"description"` // e.g., "blue denim jacket", "white t-shirt"
+	Color       string `json:"color"`
+	Confidence  string `json:"confidence"` // high, medium, low
+}
+
 func main() {
 	// Initialize database
 	if err := initDB(); err != nil {
@@ -622,17 +642,18 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 
 // aiJobWorkers maps job types to their worker functions
 var aiJobWorkers = map[string]func(context.Context, *AIJob, json.RawMessage){
-	"analyze":        runAnalyzeJob,
-	"tags":           runTagsJob,
-	"dress":          runDressJob,
-	"remove-bg":      runRemoveBgJob,
-	"tryon":          runTryOnJob,
-	"suggest-outfit": runSuggestOutfitJob,
-	"color-match":    runColorMatchJob,
-	"style-match":    runStyleMatchJob,
-	"rate-outfit":    runRateOutfitJob,
-	"wardrobe-gaps":  runWardrobeGapsJob,
-	"chat":           runChatJob,
+	"analyze":           runAnalyzeJob,
+	"tags":              runTagsJob,
+	"dress":             runDressJob,
+	"remove-bg":         runRemoveBgJob,
+	"tryon":             runTryOnJob,
+	"suggest-outfit":    runSuggestOutfitJob,
+	"color-match":       runColorMatchJob,
+	"style-match":       runStyleMatchJob,
+	"rate-outfit":       runRateOutfitJob,
+	"wardrobe-gaps":     runWardrobeGapsJob,
+	"chat":              runChatJob,
+	"detect-outfit-items": runDetectOutfitItemsJob,
 }
 
 func handleAIJobSubmit(w http.ResponseWriter, r *http.Request) {
@@ -2592,4 +2613,84 @@ Keep responses concise and conversational. Use the tools proactively — if the 
 		Message:   resp.Message.Content,
 		ToolsUsed: toolsUsed,
 	})
+}
+
+func runDetectOutfitItemsJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
+	var req DetectOutfitItemsRequest
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
+		return
+	}
+
+	if req.Image == "" {
+		job.fail("Image is required")
+		return
+	}
+
+	job.updateStatus("processing", "🔍 Analyzing image for clothing items...")
+
+	prompt := `Analyze this image and detect all visible clothing items and accessories. For each item, provide:
+1. Category (tops, bottoms, shoes, accessories, outerwear, dress, one-piece)
+2. Detailed description (e.g., "light blue denim jacket with buttons", "black leather ankle boots")
+3. Primary color
+4. Confidence level (high/medium/low)
+
+Return ONLY valid JSON in this exact format:
+{
+  "items": [
+    {
+      "category": "tops",
+      "description": "light blue denim jacket",
+      "color": "blue",
+      "confidence": "high"
+    }
+  ],
+  "count": 1,
+  "description": "Brief summary of the outfit"
+}`
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	start := time.Now()
+	ollamaResp, usedModel, err := callOllamaWithFallback(prompt, []string{req.Image}, spatialModel, visionModel)
+	if err != nil {
+		job.fail("AI request failed: " + err.Error())
+		return
+	}
+
+	log.Printf("Detect outfit items job %s: %v (model: %s)", job.ID[:8], time.Since(start), usedModel)
+
+	result := parseDetectOutfitItemsResponse(ollamaResp.Response)
+	result.RawResponse = ollamaResp.Response
+	job.complete(result)
+}
+
+func parseDetectOutfitItemsResponse(response string) *DetectOutfitItemsResponse {
+	// Try to extract JSON from the response
+	start := strings.Index(response, "{")
+	end := strings.LastIndex(response, "}")
+
+	if start == -1 || end == -1 {
+		return &DetectOutfitItemsResponse{
+			Items:       []DetectedItem{},
+			Count:       0,
+			Description: "Could not parse AI response",
+		}
+	}
+
+	jsonStr := response[start : end+1]
+
+	var result DetectOutfitItemsResponse
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		log.Printf("Failed to parse detect response: %v", err)
+		return &DetectOutfitItemsResponse{
+			Items:       []DetectedItem{},
+			Count:       0,
+			Description: "Invalid AI response format",
+		}
+	}
+
+	return &result
 }

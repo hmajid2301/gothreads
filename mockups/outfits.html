@@ -25,6 +25,7 @@
       <div class="toolbar">
         <h1>My Outfits</h1>
         <div class="toolbar-actions">
+          <a href="outfit-builder.html?ai=true" class="btn btn-secondary">✨ AI Suggest Outfit</a>
           <a href="outfit-builder.html" class="btn btn-primary">+ Create Outfit</a>
         </div>
       </div>
@@ -33,7 +34,7 @@
       <div class="card" style="margin-bottom: 1.5rem;">
         <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
           <div class="form-group" style="margin: 0; flex: 1; min-width: 200px;">
-            <input type="text" id="outfit-search" placeholder="🔍 Search outfits by name or notes...">
+            <input type="text" id="outfit-search" placeholder="🔍 Search outfits by name, items, colors, brands...">
           </div>
           <div class="form-group" style="margin: 0;">
             <select id="rating-filter">
@@ -58,41 +59,6 @@
         <!-- Dynamically rendered by JavaScript -->
       </div>
 
-      <!-- AI Suggest Outfit -->
-      <div class="card" style="margin-top: 2rem;">
-        <h2>🎯 Suggest Outfit</h2>
-        <p style="color: var(--text-neutral); margin-bottom: 1.5rem;">
-          Tell AI about the occasion and weather, and it will create a complete outfit from your wardrobe.
-        </p>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-          <div class="form-group">
-            <label>Occasion</label>
-            <select id="occasion-select">
-              <option value="casual">Casual</option>
-              <option value="formal">Formal</option>
-              <option value="business">Business/Work</option>
-              <option value="sporty">Sporty/Athletic</option>
-              <option value="date">Date Night</option>
-              <option value="party">Party/Event</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Weather</label>
-            <select id="weather-select">
-              <option value="hot">Hot (25°C+)</option>
-              <option value="warm">Warm (20-25°C)</option>
-              <option value="mild">Mild (15-20°C)</option>
-              <option value="cool">Cool (10-15°C)</option>
-              <option value="cold">Cold (&lt;10°C)</option>
-              <option value="rainy">Rainy</option>
-            </select>
-          </div>
-        </div>
-        <button id="suggest-outfit-btn" class="btn btn-primary" style="width: 100%;">
-          ✨ Suggest Outfit
-        </button>
-        <div id="outfit-suggestion-result" style="display: none; margin-top: 1.5rem; padding: 1.5rem; background: var(--warm-bg); border-radius: 0.5rem;"></div>
-      </div>
 
     </div>
   </main>

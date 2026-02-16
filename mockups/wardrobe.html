@@ -25,15 +25,83 @@
       <div class="toolbar">
         <h1>My Wardrobe</h1>
         <div class="toolbar-actions">
-          <select id="category-filter" style="padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border);">
-            <option value="all">All Categories</option>
-            <option value="Tops">Tops</option>
-            <option value="Bottoms">Bottoms</option>
-            <option value="Shoes">Shoes</option>
-            <option value="Outerwear">Outerwear</option>
-            <option value="Accessories">Accessories</option>
-          </select>
           <a href="upload.html" class="btn btn-primary">+ Add Item</a>
+        </div>
+      </div>
+
+      <!-- Search and Filters -->
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: end;">
+          <!-- Search -->
+          <div style="flex: 1; min-width: 250px;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Search</label>
+            <input
+              type="text"
+              id="wardrobe-search"
+              placeholder="Search by name, brand, color, or description..."
+              style="width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border);"
+            >
+          </div>
+
+          <!-- Category Filter -->
+          <div style="min-width: 150px;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Category</label>
+            <select id="category-filter" style="width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+              <option value="all">All Categories</option>
+              <option value="Tops">Tops</option>
+              <option value="Bottoms">Bottoms</option>
+              <option value="Shoes">Shoes</option>
+              <option value="Outerwear">Outerwear</option>
+              <option value="Accessories">Accessories</option>
+              <option value="Dresses">Dresses</option>
+            </select>
+          </div>
+
+          <!-- Color Filter -->
+          <div style="min-width: 150px;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Color</label>
+            <select id="color-filter" style="width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+              <option value="all">All Colors</option>
+            </select>
+          </div>
+
+          <!-- Season Filter -->
+          <div style="min-width: 150px;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Season</label>
+            <select id="season-filter" style="width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+              <option value="all">All Seasons</option>
+              <option value="Spring">Spring</option>
+              <option value="Summer">Summer</option>
+              <option value="Fall">Fall</option>
+              <option value="Winter">Winter</option>
+            </select>
+          </div>
+
+          <!-- Sort -->
+          <div style="min-width: 150px;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Sort By</label>
+            <select id="sort-filter" style="width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+              <option value="date-desc">Newest First</option>
+              <option value="date-asc">Oldest First</option>
+              <option value="name-asc">Name (A-Z)</option>
+              <option value="name-desc">Name (Z-A)</option>
+              <option value="wear-desc">Most Worn</option>
+              <option value="wear-asc">Least Worn</option>
+            </select>
+          </div>
+
+          <!-- Clear Filters -->
+          <button id="clear-filters-btn" class="btn btn-secondary" style="padding: 0.75rem 1.5rem;">
+            Clear Filters
+          </button>
+        </div>
+
+        <!-- Active Filters Display -->
+        <div id="active-filters" style="margin-top: 1rem; display: none;">
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+            <span style="font-weight: 600; color: var(--text-neutral);">Active filters:</span>
+            <div id="filter-chips" style="display: flex; gap: 0.5rem; flex-wrap: wrap;"></div>
+          </div>
         </div>
       </div>
 
@@ -60,6 +128,9 @@
   <script src="js/app.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
+      checkAIStatus();
+      initWardrobeFilter();
+      renderWardrobe('wardrobe-grid');
       initAIStylist();
     });
   </script>

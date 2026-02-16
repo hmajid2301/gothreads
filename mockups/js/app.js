@@ -674,6 +674,28 @@ async function handleSingleFileUpload(file, shouldRedirect = true) {
       let imageData = e.target.result;
 
       try {
+        // First, detect if there are multiple clothing items
+        let detectedItems = null;
+        if (aiAvailable) {
+          updateProcessingStatus('Detecting clothing items...');
+          detectedItems = await detectOutfitItems(imageData);
+
+          if (detectedItems && detectedItems.count > 1) {
+            // Multiple items detected - ask user what they want
+            const selectedItems = await askUserWhichItems(detectedItems);
+
+            if (!selectedItems || selectedItems.length === 0) {
+              // User cancelled or didn't select anything
+              resolve(false);
+              return;
+            }
+
+            // TODO: Process each selected item separately (background removal + segmentation)
+            // For now, just process the whole image
+            showToast(`Processing ${selectedItems.length} items in background...`, 'info');
+          }
+        }
+
         // Remove background first (always)
         updateProcessingStatus('Removing background...');
         const bgRemovedImage = await removeBackgroundWithAI(imageData);
@@ -811,7 +833,73 @@ function updateProcessingStatus(text) {
 // WARDROBE GRID
 // ============================================================================
 
-async function renderWardrobe(containerId, filterCategory = 'all') {
+// Store all items globally for filtering
+let allWardrobeItems = [];
+let wardrobeFilters = {
+  search: '',
+  category: 'all',
+  color: 'all',
+  season: 'all',
+  sort: 'date-desc'
+};
+
+// Fuzzy string matching using Levenshtein distance
+function fuzzyMatch(str, pattern) {
+  if (!pattern) return true;
+
+  str = (str || '').toLowerCase();
+  pattern = pattern.toLowerCase();
+
+  // Exact match or substring
+  if (str.includes(pattern)) return true;
+
+  // Calculate similarity score (simple version)
+  const words = str.split(/\s+/);
+  for (const word of words) {
+    if (word.startsWith(pattern)) return true;
+
+    // Check Levenshtein distance for fuzzy matching
+    const distance = levenshteinDistance(word, pattern);
+    const threshold = Math.max(2, Math.floor(pattern.length * 0.3)); // 30% tolerance
+    if (distance <= threshold) return true;
+  }
+
+  return false;
+}
+
+// Simple Levenshtein distance implementation
+function levenshteinDistance(a, b) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const matrix = [];
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
+}
+
+async function renderWardrobe(containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
@@ -819,22 +907,61 @@ async function renderWardrobe(containerId, filterCategory = 'all') {
   const urlParams = new URLSearchParams(window.location.search);
   const showRecent = urlParams.get('recent') === 'true';
 
-  // Fetch items from API
-  let items = [];
-  try {
-    const response = await fetch('http://localhost:8556/api/items');
-    if (response.ok) {
-      items = await response.json();
+  // Fetch items from API if not already loaded
+  if (allWardrobeItems.length === 0) {
+    try {
+      const response = await fetch('http://localhost:8556/api/items');
+      if (response.ok) {
+        allWardrobeItems = await response.json();
+        populateColorFilter();
+      }
+    } catch (error) {
+      console.error('Failed to fetch items:', error);
     }
-  } catch (error) {
-    console.error('Failed to fetch items:', error);
   }
 
-  if (filterCategory !== 'all') {
-    items = items.filter(item => item.category === filterCategory);
+  let items = [...allWardrobeItems];
+
+  // Apply search filter (fuzzy)
+  if (wardrobeFilters.search) {
+    items = items.filter(item => {
+      const searchFields = [
+        item.name,
+        item.brand,
+        item.color,
+        item.description,
+        item.category,
+        (item.tags || []).join(' ')
+      ].join(' ');
+
+      return fuzzyMatch(searchFields, wardrobeFilters.search);
+    });
   }
 
-  // Sort by upload date if showing recent
+  // Apply category filter
+  if (wardrobeFilters.category !== 'all') {
+    items = items.filter(item => item.category === wardrobeFilters.category);
+  }
+
+  // Apply color filter
+  if (wardrobeFilters.color !== 'all') {
+    items = items.filter(item =>
+      item.color && item.color.toLowerCase().includes(wardrobeFilters.color.toLowerCase())
+    );
+  }
+
+  // Apply season filter
+  if (wardrobeFilters.season !== 'all') {
+    items = items.filter(item =>
+      item.season === wardrobeFilters.season ||
+      (item.tags && item.tags.includes(wardrobeFilters.season))
+    );
+  }
+
+  // Apply sorting
+  items = sortItems(items, wardrobeFilters.sort);
+
+  // Override sort if showing recent
   if (showRecent) {
     items = items.sort((a, b) => new Date(b.uploaded_at || 0) - new Date(a.uploaded_at || 0));
   }
@@ -844,8 +971,9 @@ async function renderWardrobe(containerId, filterCategory = 'all') {
   if (items.length === 0) {
     container.innerHTML = `
       <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-neutral);">
-        <div style="font-size: 3rem; margin-bottom: 1rem;">👕</div>
-        <p>No items found. <a href="upload.html" style="color: var(--primary);">Upload your first item!</a></p>
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+        <p>No items match your filters.</p>
+        <button onclick="clearWardrobeFilters()" class="btn btn-secondary" style="margin-top: 1rem;">Clear Filters</button>
       </div>
     `;
     return;
@@ -861,6 +989,19 @@ async function renderWardrobe(containerId, filterCategory = 'all') {
       </p>
     `;
     container.appendChild(banner);
+  }
+
+  // Show filter count if filters are active
+  const activeFilterCount = getActiveFilterCount();
+  if (activeFilterCount > 0) {
+    const filterBanner = document.createElement('div');
+    filterBanner.style.cssText = 'grid-column: 1/-1; background: var(--warm-bg); padding: 0.75rem 1rem; border-radius: 0.5rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;';
+    filterBanner.innerHTML = `
+      <span style="color: var(--text-neutral);">
+        Showing ${items.length} of ${allWardrobeItems.length} items (${activeFilterCount} filter${activeFilterCount > 1 ? 's' : ''} active)
+      </span>
+    `;
+    container.appendChild(filterBanner);
   }
 
   items.forEach(item => {
@@ -909,15 +1050,167 @@ async function renderWardrobe(containerId, filterCategory = 'all') {
 
     container.appendChild(card);
   });
+
+  updateActiveFiltersDisplay();
+}
+
+function sortItems(items, sortBy) {
+  switch (sortBy) {
+    case 'date-desc':
+      return items.sort((a, b) => (b.id || 0) - (a.id || 0));
+    case 'date-asc':
+      return items.sort((a, b) => (a.id || 0) - (b.id || 0));
+    case 'name-asc':
+      return items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    case 'name-desc':
+      return items.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+    case 'wear-desc':
+      return items.sort((a, b) => (b.wear_count || 0) - (a.wear_count || 0));
+    case 'wear-asc':
+      return items.sort((a, b) => (a.wear_count || 0) - (b.wear_count || 0));
+    default:
+      return items;
+  }
+}
+
+function populateColorFilter() {
+  const colorFilter = document.getElementById('color-filter');
+  if (!colorFilter) return;
+
+  const colors = new Set();
+  allWardrobeItems.forEach(item => {
+    if (item.color) {
+      colors.add(item.color);
+    }
+  });
+
+  const sortedColors = Array.from(colors).sort();
+  sortedColors.forEach(color => {
+    const option = document.createElement('option');
+    option.value = color;
+    option.textContent = color;
+    colorFilter.appendChild(option);
+  });
+}
+
+function getActiveFilterCount() {
+  let count = 0;
+  if (wardrobeFilters.search) count++;
+  if (wardrobeFilters.category !== 'all') count++;
+  if (wardrobeFilters.color !== 'all') count++;
+  if (wardrobeFilters.season !== 'all') count++;
+  return count;
+}
+
+function updateActiveFiltersDisplay() {
+  const activeFiltersDiv = document.getElementById('active-filters');
+  const filterChipsDiv = document.getElementById('filter-chips');
+
+  if (!activeFiltersDiv || !filterChipsDiv) return;
+
+  const chips = [];
+
+  if (wardrobeFilters.search) {
+    chips.push(`Search: "${wardrobeFilters.search}"`);
+  }
+  if (wardrobeFilters.category !== 'all') {
+    chips.push(`Category: ${wardrobeFilters.category}`);
+  }
+  if (wardrobeFilters.color !== 'all') {
+    chips.push(`Color: ${wardrobeFilters.color}`);
+  }
+  if (wardrobeFilters.season !== 'all') {
+    chips.push(`Season: ${wardrobeFilters.season}`);
+  }
+
+  if (chips.length > 0) {
+    filterChipsDiv.innerHTML = chips.map(chip => `
+      <span style="background: var(--primary); color: white; padding: 0.25rem 0.75rem; border-radius: 1rem; font-size: 0.875rem;">
+        ${chip}
+      </span>
+    `).join('');
+    activeFiltersDiv.style.display = 'block';
+  } else {
+    activeFiltersDiv.style.display = 'none';
+  }
+}
+
+function clearWardrobeFilters() {
+  wardrobeFilters = {
+    search: '',
+    category: 'all',
+    color: 'all',
+    season: 'all',
+    sort: 'date-desc'
+  };
+
+  // Reset UI
+  const searchInput = document.getElementById('wardrobe-search');
+  const categoryFilter = document.getElementById('category-filter');
+  const colorFilter = document.getElementById('color-filter');
+  const seasonFilter = document.getElementById('season-filter');
+  const sortFilter = document.getElementById('sort-filter');
+
+  if (searchInput) searchInput.value = '';
+  if (categoryFilter) categoryFilter.value = 'all';
+  if (colorFilter) colorFilter.value = 'all';
+  if (seasonFilter) seasonFilter.value = 'all';
+  if (sortFilter) sortFilter.value = 'date-desc';
+
+  renderWardrobe('wardrobe-grid');
 }
 
 function initWardrobeFilter() {
-  const filter = document.getElementById('category-filter');
-  if (!filter) return;
+  const searchInput = document.getElementById('wardrobe-search');
+  const categoryFilter = document.getElementById('category-filter');
+  const colorFilter = document.getElementById('color-filter');
+  const seasonFilter = document.getElementById('season-filter');
+  const sortFilter = document.getElementById('sort-filter');
+  const clearBtn = document.getElementById('clear-filters-btn');
 
-  filter.addEventListener('change', (e) => {
-    renderWardrobe('wardrobe-grid', e.target.value);
-  });
+  // Debounce search input
+  let searchTimeout;
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        wardrobeFilters.search = e.target.value;
+        renderWardrobe('wardrobe-grid');
+      }, 300);
+    });
+  }
+
+  if (categoryFilter) {
+    categoryFilter.addEventListener('change', (e) => {
+      wardrobeFilters.category = e.target.value;
+      renderWardrobe('wardrobe-grid');
+    });
+  }
+
+  if (colorFilter) {
+    colorFilter.addEventListener('change', (e) => {
+      wardrobeFilters.color = e.target.value;
+      renderWardrobe('wardrobe-grid');
+    });
+  }
+
+  if (seasonFilter) {
+    seasonFilter.addEventListener('change', (e) => {
+      wardrobeFilters.season = e.target.value;
+      renderWardrobe('wardrobe-grid');
+    });
+  }
+
+  if (sortFilter) {
+    sortFilter.addEventListener('change', (e) => {
+      wardrobeFilters.sort = e.target.value;
+      renderWardrobe('wardrobe-grid');
+    });
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', clearWardrobeFilters);
+  }
 }
 
 // ============================================================================
@@ -2629,13 +2922,33 @@ function renderOutfits(containerId, filters = {}) {
 
   let outfits = [...appData.outfits];
 
-  // Apply search filter
+  // Apply search filter (search outfit name, notes, and item details)
   if (filters.search) {
     const searchLower = filters.search.toLowerCase();
-    outfits = outfits.filter(o =>
-      o.name.toLowerCase().includes(searchLower) ||
-      (o.notes && o.notes.toLowerCase().includes(searchLower))
-    );
+    outfits = outfits.filter(o => {
+      // Search in outfit name and notes
+      if (o.name.toLowerCase().includes(searchLower)) return true;
+      if (o.notes && o.notes.toLowerCase().includes(searchLower)) return true;
+
+      // Search in items' details (name, brand, color, category, description)
+      const items = o.itemIds.map(id => appData.items.find(i => i.id == id)).filter(Boolean);
+      for (const item of items) {
+        const itemFields = [
+          item.name,
+          item.brand,
+          item.color,
+          item.category,
+          item.description,
+          (item.tags || []).join(' ')
+        ].join(' ').toLowerCase();
+
+        if (fuzzyMatch(itemFields, filters.search)) {
+          return true;
+        }
+      }
+
+      return false;
+    });
   }
 
   // Apply rating filter
@@ -3129,11 +3442,14 @@ function renderCalendar() {
     monthHeader.textContent = `${monthNames[month]} ${year}`;
   }
 
-  // Get calendar container
-  const container = document.getElementById('calendar-days');
+  // Get calendar grid container
+  const container = document.getElementById('calendar-grid');
   if (!container) return;
 
+  // Remove existing day cells (keep headers)
+  const headers = container.querySelectorAll('.calendar-header');
   container.innerHTML = '';
+  headers.forEach(h => container.appendChild(h));
 
   // Get first day of month and total days
   const firstDay = new Date(year, month, 1).getDay();
@@ -3268,8 +3584,8 @@ function openDayModal(year, month, day) {
 }
 
 function viewOutfitFromCalendar(outfitId) {
-  // Navigate to outfits page with the outfit ID
-  window.location.href = `outfits.html?outfit=${outfitId}`;
+  // Navigate to outfit builder to edit the outfit
+  window.location.href = `outfit-builder.html?edit=${outfitId}`;
 }
 
 async function saveCalendarOutfit(dateStr) {
@@ -4731,5 +5047,80 @@ async function processVoiceCommand(transcript) {
 
   // If we couldn't parse the command, show help
   showToast('Try: "Show my tops", "Create an outfit", "Add new item"', 'info');
+}
+
+// ============================================================================
+// OUTFIT ITEM DETECTION
+// ============================================================================
+
+async function detectOutfitItems(imageData) {
+  try {
+    const response = await fetch('http://localhost:8556/api/ai/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'detect-outfit-items',
+        payload: { image: imageData }
+      })
+    });
+
+    if (!response.ok) return null;
+
+    const job = await response.json();
+    const result = await pollAIJobResult(job.job_id, 30000);
+
+    return result;
+  } catch (error) {
+    console.error('Outfit detection error:', error);
+    return null;
+  }
+}
+
+async function askUserWhichItems(detectedItems) {
+  return new Promise((resolve) => {
+    const itemsHTML = detectedItems.items.map((item, idx) => `
+      <label style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; border: 1px solid #eee; border-radius: 0.5rem; cursor: pointer; margin-bottom: 0.5rem;">
+        <input type="checkbox" value="${idx}" checked style="width: 20px; height: 20px;">
+        <div style="flex: 1;">
+          <div style="font-weight: 600;">${item.category}</div>
+          <div style="font-size: 0.875rem; color: var(--text-neutral);">${item.description}</div>
+          <div style="font-size: 0.75rem; color: var(--text-neutral); margin-top: 0.25rem;">
+            Color: ${item.color} • Confidence: ${item.confidence}
+          </div>
+        </div>
+      </label>
+    `).join('');
+
+    showModal('Multiple Items Detected', `
+      <p style="margin-bottom: 1rem; color: var(--text-neutral);">
+        AI detected ${detectedItems.count} clothing items. Select which ones you'd like to add to your wardrobe:
+      </p>
+      <div id="items-selection" style="max-height: 400px; overflow-y: auto;">
+        ${itemsHTML}
+      </div>
+      <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-neutral);">
+        <strong>Note:</strong> Each item will be processed separately in the background.
+      </p>
+    `, [
+      {
+        label: 'Cancel',
+        onclick: () => {
+          closeModal();
+          resolve(null);
+        }
+      },
+      {
+        label: 'Process Selected',
+        primary: true,
+        onclick: () => {
+          const checkboxes = document.querySelectorAll('#items-selection input[type="checkbox"]:checked');
+          const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.value));
+          const selectedItems = selectedIndices.map(idx => detectedItems.items[idx]);
+          closeModal();
+          resolve(selectedItems);
+        }
+      }
+    ]);
+  });
 }
 

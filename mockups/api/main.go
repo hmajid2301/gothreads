@@ -11,11 +11,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,50 +32,60 @@ import (
 
 const (
 	defaultOllamaURL         = "http://localhost:11434"
-	defaultVisionModel       = "llava:7b"
+	defaultVisionModel       = "llava:34b"
 	defaultTextModel         = "llama3.2:3b"
-	defaultSpatialModelLocal = "qwen3-vl:8b"
+	defaultSpatialModelLocal = "qwen3-vl:32b"
 	defaultSpatialModelCloud = "qwen3-vl:235b-cloud"
 	defaultTextModelCloud    = "deepseek-v3.1:671b-cloud"
 	defaultRembgURL          = "http://localhost:5000"
 	defaultVtonBackendURL    = "https://hmajid2301-fashn-vton-1-5.hf.space"
-	defaultCatvtonLocalURL   = "http://localhost:8557"
+	defaultCatvtonLocalURL   = "http://localhost:7860"
+	defaultLadivtonShoesURL  = "http://localhost:8558"
 )
 
 var (
-	ollamaURL      string
-	ollamaCloud    bool
-	visionModel    string
-	textModel      string
-	cloudTextModel string
-	spatialModel   string
-	rembgURL          string
-	vtonBackendURL    string
-	catvtonLocalURL   string
+	ollamaURL        string
+	ollamaCloud      bool
+	visionModel      string
+	textModel        string
+	cloudTextModel   string
+	spatialModel     string
+	rembgURL         string
+	vtonBackendURL   string
+	catvtonLocalURL  string
+	ladivtonShoesURL string
 )
 
 func init() {
 	// Load .env before reading env vars
 	_ = godotenv.Load()
 
-	ollamaURL = getEnv("OLLAMA_URL", defaultOllamaURL)
-	visionModel = getEnv("OLLAMA_VISION_MODEL", defaultVisionModel)
-	textModel = getEnv("OLLAMA_TEXT_MODEL", defaultTextModel)
-	rembgURL = getEnv("REMBG_URL", defaultRembgURL)
-	vtonBackendURL = getEnv("VTON_BACKEND_URL", defaultVtonBackendURL)
-	catvtonLocalURL = getEnv("CATVTON_LOCAL_URL", defaultCatvtonLocalURL)
+	// Load config from YAML (with env overrides)
+	cfg, err := loadConfig()
+	if err != nil {
+		log.Printf("⚠️  Failed to load config: %v, using defaults", err)
+		cfg = getDefaultConfig()
+	}
+	appConfig = cfg
+
+	// Set global variables from config for backward compatibility
+	ollamaURL = cfg.AI.Ollama.URL
+	visionModel = cfg.AI.Ollama.VisionModel
+	textModel = cfg.AI.Ollama.TextModel
+	spatialModel = cfg.AI.Ollama.SpatialModel
+	rembgURL = cfg.ImageProcessing.RembgURL
+	vtonBackendURL = cfg.ImageProcessing.VTONBackend
+	catvtonLocalURL = cfg.ImageProcessing.CatVTONURL
+	ladivtonShoesURL = cfg.ImageProcessing.LadiVTONShoes
 
 	// Detect cloud models by checking if they're pulled in Ollama
 	ollamaCloud = isModelAvailable(defaultSpatialModelCloud) || isModelAvailable(defaultTextModelCloud)
 
-	defaultSpatial := defaultSpatialModelLocal
-	defaultCloudText := textModel
 	if ollamaCloud {
-		defaultSpatial = defaultSpatialModelCloud
-		defaultCloudText = defaultTextModelCloud
+		cloudTextModel = defaultTextModelCloud
+	} else {
+		cloudTextModel = textModel
 	}
-	spatialModel = getEnv("OLLAMA_SPATIAL_MODEL", defaultSpatial)
-	cloudTextModel = getEnv("OLLAMA_CLOUD_TEXT_MODEL", defaultCloudText)
 }
 
 // isModelAvailable checks if a model is pulled in Ollama
@@ -110,7 +126,7 @@ type OllamaResponse struct {
 
 // OllamaChatMessage represents a single message in the chat conversation
 type OllamaChatMessage struct {
-	Role      string           `json:"role"`                 // system, user, assistant, tool
+	Role      string           `json:"role"` // system, user, assistant, tool
 	Content   string           `json:"content"`
 	ToolCalls []OllamaToolCall `json:"tool_calls,omitempty"` // only in assistant messages
 }
@@ -205,9 +221,15 @@ type RemoveBgResponse struct {
 
 // TryOnRequest for virtual try-on
 type TryOnRequest struct {
-	PersonImage  string `json:"person_image"`  // base64 encoded person image
-	GarmentImage string `json:"garment_image"` // base64 encoded garment image
-	ClothType    string `json:"cloth_type"`     // upper, lower, overall
+	PersonImage  string      `json:"person_image"`  // base64 encoded person image
+	GarmentImage string      `json:"garment_image"` // base64 encoded garment image (legacy/single)
+	ClothType    string      `json:"cloth_type"`    // upper, lower, overall (legacy/single)
+	Garments     []TryOnItem `json:"garments"`      // List of garments for multi-try-on
+}
+
+type TryOnItem struct {
+	Image     string `json:"image"`      // base64 encoded garment image
+	ClothType string `json:"cloth_type"` // upper, lower, overall
 }
 
 // TryOnResponse returns the try-on result
@@ -218,8 +240,8 @@ type TryOnResponse struct {
 // AIJob represents any async AI operation
 type AIJob struct {
 	ID        string          `json:"id"`
-	Type      string          `json:"type"`    // analyze, tags, dress, remove-bg, tryon, suggest-outfit, color-match, style-match, rate-outfit, wardrobe-gaps
-	Status    string          `json:"status"`  // queued, processing, complete, failed, cancelled
+	Type      string          `json:"type"`   // analyze, tags, dress, remove-bg, tryon, suggest-outfit, color-match, style-match, rate-outfit, wardrobe-gaps
+	Status    string          `json:"status"` // queued, processing, complete, failed, cancelled
 	Message   string          `json:"message"`
 	Result    json.RawMessage `json:"result,omitempty"`
 	Error     string          `json:"error,omitempty"`
@@ -357,9 +379,9 @@ type ColorMatchResponse struct {
 
 // StyleMatchRequest for finding matching items
 type StyleMatchRequest struct {
-	BaseItem ClothingItemForMatch   `json:"base_item"`      // item to match with
-	Items    []ClothingItemForMatch `json:"items"`          // available items
-	MaxItems int                    `json:"max_items"`      // max items to return (default 5)
+	BaseItem ClothingItemForMatch   `json:"base_item"` // item to match with
+	Items    []ClothingItemForMatch `json:"items"`     // available items
+	MaxItems int                    `json:"max_items"` // max items to return (default 5)
 }
 
 // StyleMatchResponse returns matching items
@@ -369,10 +391,10 @@ type StyleMatchResponse struct {
 }
 
 type MatchedItem struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	Reason   string `json:"reason"` // Why it matches
-	Score    int    `json:"score"`  // 0-100 match score
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Reason string `json:"reason"` // Why it matches
+	Score  int    `json:"score"`  // 0-100 match score
 }
 
 // RateOutfitRequest for outfit feedback
@@ -465,6 +487,24 @@ type DetectedItem struct {
 	Confidence  string `json:"confidence"` // high, medium, low
 }
 
+// ScrapeRequest for scraping product info from URL
+type ScrapeRequest struct {
+	URL string `json:"url"`
+}
+
+// ScrapeResponse returns scraped product info
+type ScrapeResponse struct {
+	Title       string `json:"title"`
+	ImageURL    string `json:"image_url"`
+	Description string `json:"description"`
+	SiteName    string `json:"site_name"`
+	OriginalURL string `json:"original_url"`
+	Category    string `json:"category,omitempty"`
+	Color       string `json:"color,omitempty"`
+	Brand       string `json:"brand,omitempty"`
+	Price       string `json:"price,omitempty"`
+}
+
 func main() {
 	// Initialize database
 	if err := initDB(); err != nil {
@@ -516,6 +556,9 @@ func main() {
 	mux.HandleFunc("POST /api/wear", handleLogWear)
 	mux.HandleFunc("GET /api/wear", handleGetWearHistory)
 
+	// Web Scraper
+	mux.HandleFunc("POST /api/scrape", handleScrapeURL)
+
 	// S3 upload endpoint
 	mux.HandleFunc("POST /api/upload", handleS3Upload)
 
@@ -536,8 +579,9 @@ func main() {
 	log.Printf("🖼️  Rembg URL: %s", rembgURL)
 	log.Printf("🧥 FASHN VTON: %s", vtonBackendURL)
 	log.Printf("🧥 CatVTON Local fallback: %s", catvtonLocalURL)
+	log.Printf("👟 LaDI-VTON Shoes: %s", ladivtonShoesURL)
 	log.Printf("")
-	log.Printf("Open http://localhost:%s/upload.html to test AI features", port)
+	log.Printf("Open http://localhost:%s/wardrobe.html to get started", port)
 
 	// Cleanup old jobs every 5 minutes
 	go func() {
@@ -620,19 +664,19 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"ollama_url":           ollamaURL,
-		"vision_model":         visionModel,
-		"text_model":           textModel,
-		"spatial_model":        spatialModel,
-		"cloud_text_model":     cloudTextModel,
-		"ollama_cloud":         ollamaCloud,
-		"rembg_url":            rembgURL,
-		"available_models":     models,
-		"vision_model_ready":   hasVision,
-		"text_model_ready":     hasText,
-		"spatial_model_ready":  hasSpatial,
-		"rembg_available":      rembgAvailable,
-		"ready":                hasVision,
+		"ollama_url":          ollamaURL,
+		"vision_model":        visionModel,
+		"text_model":          textModel,
+		"spatial_model":       spatialModel,
+		"cloud_text_model":    cloudTextModel,
+		"ollama_cloud":        ollamaCloud,
+		"rembg_url":           rembgURL,
+		"available_models":    models,
+		"vision_model_ready":  hasVision,
+		"text_model_ready":    hasText,
+		"spatial_model_ready": hasSpatial,
+		"rembg_available":     rembgAvailable,
+		"ready":               hasVision,
 	})
 }
 
@@ -642,18 +686,19 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 
 // aiJobWorkers maps job types to their worker functions
 var aiJobWorkers = map[string]func(context.Context, *AIJob, json.RawMessage){
-	"analyze":           runAnalyzeJob,
-	"tags":              runTagsJob,
-	"dress":             runDressJob,
-	"remove-bg":         runRemoveBgJob,
-	"tryon":             runTryOnJob,
-	"suggest-outfit":    runSuggestOutfitJob,
-	"color-match":       runColorMatchJob,
-	"style-match":       runStyleMatchJob,
-	"rate-outfit":       runRateOutfitJob,
-	"wardrobe-gaps":     runWardrobeGapsJob,
-	"chat":              runChatJob,
+	"analyze":             runAnalyzeJob,
+	"tags":                runTagsJob,
+	"dress":               runDressJob,
+	"remove-bg":           runRemoveBgJob,
+	"tryon":               runTryOnJob,
+	"suggest-outfit":      runSuggestOutfitJob,
+	"color-match":         runColorMatchJob,
+	"style-match":         runStyleMatchJob,
+	"rate-outfit":         runRateOutfitJob,
+	"wardrobe-gaps":       runWardrobeGapsJob,
+	"chat":                runChatJob,
 	"detect-outfit-items": runDetectOutfitItemsJob,
+	"scrape":              runScrapeJob,
 }
 
 func handleAIJobSubmit(w http.ResponseWriter, r *http.Request) {
@@ -1169,12 +1214,23 @@ func callOllamaWithFallback(prompt string, images []string, primaryModel, fallba
 	return resp, fallbackModel, nil
 }
 
+func stripDataURIPrefix(s string) string {
+	if idx := strings.Index(s, ","); idx != -1 && strings.HasPrefix(s, "data:") {
+		return s[idx+1:]
+	}
+	return s
+}
+
 func callOllama(prompt string, images []string, model string) (*OllamaResponse, error) {
 	log.Printf("🤖 Calling Ollama model: %s", model)
+	cleanImages := make([]string, len(images))
+	for i, img := range images {
+		cleanImages[i] = stripDataURIPrefix(img)
+	}
 	ollamaReq := OllamaRequest{
 		Model:  model,
 		Prompt: prompt,
-		Images: images,
+		Images: cleanImages,
 		Stream: false,
 	}
 
@@ -1325,6 +1381,40 @@ func runRemoveBgJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	})
 }
 
+// rembgAvailable checks if the rembg service is running
+func rembgAvailable() bool {
+	resp, err := http.Get(rembgURL)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+// removeBackgroundFromBytes calls the rembg service and returns the cleaned image bytes
+func removeBackgroundFromBytes(imgBytes []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", "image.png")
+	if err != nil {
+		return nil, err
+	}
+	part.Write(imgBytes)
+	writer.Close()
+
+	resp, err := http.Post(rembgURL+"/api/remove", writer.FormDataContentType(), &buf)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("rembg returned status %d", resp.StatusCode)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
 // uploadToGradio uploads a base64 image to a Gradio Space and returns a FileData reference.
 // Newer Gradio (>=4) uses /gradio_api/upload and expects FileData with meta._type.
 func uploadToGradio(spaceURL string, imageData string) (map[string]interface{}, error) {
@@ -1427,14 +1517,14 @@ func callVtonBackend(backendURL, personImage, garmentImage string) (string, erro
 	// /try_on params: person_image, garment_image, category, photo_type, steps, guidance, seed, segmentation_free
 	callPayload := map[string]interface{}{
 		"data": []interface{}{
-			personRef,   // Person Image (FileData)
-			garmentRef,  // Garment Image (FileData)
-			"tops",      // Category: tops, bottoms, one-pieces
-			"flat-lay",  // Photo Type: model or flat-lay
-			50,          // Sampling Steps
-			1.5,         // Guidance Scale
-			42,          // Seed
-			true,        // Segmentation Free
+			personRef,  // Person Image (FileData)
+			garmentRef, // Garment Image (FileData)
+			"tops",     // Category: tops, bottoms, one-pieces
+			"flat-lay", // Photo Type: model or flat-lay
+			50,         // Sampling Steps
+			1.5,        // Guidance Scale
+			42,         // Seed
+			true,       // Segmentation Free
 		},
 	}
 
@@ -1586,6 +1676,249 @@ func sendSSE(w http.ResponseWriter, event, data string) {
 	}
 }
 
+// uploadFileToGradio uploads a local file to the Gradio server via POST /upload
+// and returns the server-side path for use in predict calls.
+func uploadFileToGradio(ctx context.Context, gradioURL, localPath string) (string, error) {
+	f, err := os.Open(localPath)
+	if err != nil {
+		return "", fmt.Errorf("open file: %w", err)
+	}
+	defer f.Close()
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreateFormFile("files", "image.png")
+	if err != nil {
+		return "", fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := io.Copy(part, f); err != nil {
+		return "", fmt.Errorf("copy file data: %w", err)
+	}
+	w.Close()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", gradioURL+"/upload", &buf)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("upload request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("upload failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var paths []string
+	if err := json.NewDecoder(resp.Body).Decode(&paths); err != nil {
+		return "", fmt.Errorf("parse upload response: %w", err)
+	}
+	if len(paths) == 0 {
+		return "", fmt.Errorf("upload returned no file paths")
+	}
+
+	return paths[0], nil
+}
+
+// createDummyMaskFile creates a temporary 1x1 black PNG file for use as an
+// empty mask layer. CatVTON's AutoMasker activates when the mask is uniform
+// (all same pixel value), so this dummy triggers proper DensePose+SCHP masking.
+func createDummyMaskFile() (string, error) {
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{0, 0, 0, 255})
+
+	tmpFile, err := os.CreateTemp("", "mask-*.png")
+	if err != nil {
+		return "", err
+	}
+	defer tmpFile.Close()
+
+	if err := png.Encode(tmpFile, img); err != nil {
+		os.Remove(tmpFile.Name())
+		return "", err
+	}
+	return tmpFile.Name(), nil
+}
+
+func executeVTONStep(ctx context.Context, job *AIJob, personImage, garmentImage, clothType string, step, totalSteps int) (string, error) {
+	if catvtonLocalURL == "" {
+		return "", fmt.Errorf("virtual try-on unavailable (no local CatVTON service)")
+	}
+
+	stepDesc := ""
+	if totalSteps > 1 {
+		stepDesc = fmt.Sprintf(" (item %d/%d)", step, totalSteps)
+	}
+
+	job.updateStatus("processing", fmt.Sprintf("Processing %s try-on%s...", clothType, stepDesc))
+	log.Printf("Using local CatVTON Gradio at %s for %s", catvtonLocalURL, clothType)
+
+	// Save base64 images to temp files for upload to Gradio
+	personFile, err := saveBase64ToTempFile(personImage, "person-*.png")
+	if err != nil {
+		return "", fmt.Errorf("failed to save person image: %w", err)
+	}
+	defer os.Remove(personFile)
+
+	garmentFile, err := saveBase64ToTempFile(garmentImage, "garment-*.png")
+	if err != nil {
+		return "", fmt.Errorf("failed to save garment image: %w", err)
+	}
+	defer os.Remove(garmentFile)
+
+	// Create dummy 1x1 black PNG for mask layer
+	maskFile, err := createDummyMaskFile()
+	if err != nil {
+		return "", fmt.Errorf("failed to create mask file: %w", err)
+	}
+	defer os.Remove(maskFile)
+
+	// Upload images to Gradio server
+	job.updateStatus("processing", fmt.Sprintf("Uploading images%s...", stepDesc))
+
+	personPath, err := uploadFileToGradio(ctx, catvtonLocalURL, personFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload person image: %w", err)
+	}
+
+	garmentPath, err := uploadFileToGradio(ctx, catvtonLocalURL, garmentFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload garment image: %w", err)
+	}
+
+	maskPath, err := uploadFileToGradio(ctx, catvtonLocalURL, maskFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload mask image: %w", err)
+	}
+
+	// Build Gradio API payload
+	gradioPayload := map[string]interface{}{
+		"data": []interface{}{
+			map[string]interface{}{
+				"background": map[string]string{"path": personPath},
+				"layers":     []interface{}{map[string]string{"path": maskPath}},
+				"composite":  nil,
+			},
+			map[string]string{"path": garmentPath},
+			clothType,
+			30,  // steps
+			2.5, // guidance
+			42,  // seed
+			"result only",
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(gradioPayload)
+
+	gradioReq, err := http.NewRequestWithContext(ctx, "POST",
+		catvtonLocalURL+"/api/submit_function", bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	gradioReq.Header.Set("Content-Type", "application/json")
+
+	// Send periodic progress updates
+	done := make(chan bool)
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		elapsed := 0
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				elapsed += 10
+				job.updateStatus("processing", fmt.Sprintf("Still processing %s%s... (%ds elapsed)", clothType, stepDesc, elapsed))
+			}
+		}
+	}()
+
+	start := time.Now()
+	longClient := &http.Client{Timeout: 6 * time.Minute}
+	gradioResp, err := longClient.Do(gradioReq)
+	close(done)
+	if err != nil {
+		return "", fmt.Errorf("gradio request failed: %w", err)
+	}
+	defer gradioResp.Body.Close()
+
+	body, _ := io.ReadAll(gradioResp.Body)
+
+	if gradioResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("gradio failed (status %d): %s", gradioResp.StatusCode, string(body))
+	}
+
+	var gradioResult struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &gradioResult); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(gradioResult.Data) == 0 {
+		return "", fmt.Errorf("gradio returned empty data")
+	}
+
+	var resultFile struct {
+		Path string `json:"path"`
+		URL  string `json:"url"`
+	}
+	if err := json.Unmarshal(gradioResult.Data[0], &resultFile); err != nil {
+		return "", fmt.Errorf("unexpected result format: %w", err)
+	}
+
+	var downloadURL string
+	if resultFile.Path != "" {
+		downloadURL = catvtonLocalURL + "/file=" + resultFile.Path
+	} else if resultFile.URL != "" {
+		downloadURL = resultFile.URL
+		if strings.Contains(downloadURL, "localhost:7860") && !strings.Contains(catvtonLocalURL, "localhost") {
+			downloadURL = strings.Replace(downloadURL, "http://localhost:7860", catvtonLocalURL, 1)
+		}
+	} else {
+		return "", fmt.Errorf("result has no path or URL")
+	}
+
+	downloadReq, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create download request: %w", err)
+	}
+	downloadResp, err := http.DefaultClient.Do(downloadReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to download result: %w", err)
+	}
+	defer downloadResp.Body.Close()
+
+	if downloadResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download result (status %d)", downloadResp.StatusCode)
+	}
+
+	imageData, err := io.ReadAll(downloadResp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read result image: %w", err)
+	}
+
+	// Save debug copy
+	saveDir := filepath.Join("..", "images", "generated")
+	if err := os.MkdirAll(saveDir, 0755); err == nil {
+		savePath := filepath.Join(saveDir, fmt.Sprintf("vton-%s-step%d.webp", job.ID, step))
+		os.WriteFile(savePath, imageData, 0644)
+	}
+
+	contentType := downloadResp.Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = "image/webp"
+	}
+
+	log.Printf("CatVTON step %d complete in %v", step, time.Since(start))
+	return fmt.Sprintf("data:%s;base64,%s", contentType, base64.StdEncoding.EncodeToString(imageData)), nil
+}
+
 func runTryOnJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 	var req TryOnRequest
 	if err := json.Unmarshal(payload, &req); err != nil {
@@ -1593,55 +1926,99 @@ func runTryOnJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 		return
 	}
 
-	if req.PersonImage == "" || req.GarmentImage == "" {
-		job.fail("person_image and garment_image are required")
-		return
+	// Normalize input to list of garments
+	var garments []TryOnItem
+	if len(req.Garments) > 0 {
+		garments = req.Garments
+	} else {
+		// Legacy single item
+		if req.PersonImage == "" || req.GarmentImage == "" {
+			job.fail("person_image and garment_image are required")
+			return
+		}
+		clothType := req.ClothType
+		if clothType == "" {
+			clothType = "upper"
+		}
+		garments = []TryOnItem{{Image: req.GarmentImage, ClothType: clothType}}
 	}
 
-	if req.ClothType == "" {
-		req.ClothType = "upper"
+	// Sort garments: process 'lower' (trousers) first to establish base
+	sort.SliceStable(garments, func(i, j int) bool {
+		// "lower" < "upper"/"overall"
+		if garments[i].ClothType == "lower" && garments[j].ClothType != "lower" {
+			return true
+		}
+		return false
+	})
+
+	currentPersonImage := req.PersonImage
+
+	// Process each garment sequentially
+	for i, garment := range garments {
+		if garment.ClothType == "shoes" {
+			// Skip shoes or handle separately
+			continue
+		}
+
+		resultImage, err := executeVTONStep(ctx, job, currentPersonImage, garment.Image, garment.ClothType, i+1, len(garments))
+		if err != nil {
+			job.fail(fmt.Sprintf("Failed at step %d (%s): %v", i+1, garment.ClothType, err))
+			return
+		}
+		currentPersonImage = resultImage
+	}
+
+	job.complete(&TryOnResponse{Image: currentPersonImage})
+}
+
+func saveBase64ToTempFile(data, pattern string) (string, error) {
+	// Strip data URI prefix if present
+	if strings.Contains(data, ",") {
+		data = strings.Split(data, ",")[1]
+	}
+
+	imageData, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return "", err
+	}
+
+	tmpFile, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", err
+	}
+	defer tmpFile.Close()
+
+	if _, err := tmpFile.Write(imageData); err != nil {
+		return "", err
+	}
+
+	return tmpFile.Name(), nil
+}
+
+// runShoesTryOn handles shoe virtual try-on via the LaDI-VTON-Shoes service
+func runShoesTryOn(ctx context.Context, job *AIJob, req TryOnRequest) {
+	job.updateStatus("processing", "👟 Processing shoe try-on...")
+
+	if ladivtonShoesURL == "" {
+		job.fail("Shoe try-on unavailable (no service configured)")
+		return
 	}
 
 	start := time.Now()
+	log.Printf("👟 Sending to LaDI-VTON-Shoes at %s", ladivtonShoesURL)
 
-	job.updateStatus("processing", "☁️ Connecting to FASHN VTON cloud...")
-
-	if ctx.Err() != nil {
-		return
-	}
-
-	resultImage, err := callVtonBackend(vtonBackendURL, req.PersonImage, req.GarmentImage)
-
-	if err == nil {
-		log.Printf("☁️ FASHN VTON try-on complete in %v", time.Since(start))
-		job.complete(&TryOnResponse{Image: resultImage})
-		return
-	}
-
-	if ctx.Err() != nil {
-		return
-	}
-
-	log.Printf("⚠️ FASHN VTON try-on failed: %v", err)
-	job.updateStatus("processing", "⚠️ Cloud unavailable, falling back to local model...")
-
-	if catvtonLocalURL == "" {
-		job.fail("Virtual try-on unavailable (no cloud or local service)")
-		return
-	}
-
-	log.Printf("🔄 Using local CatVTON at %s", catvtonLocalURL)
-
-	localPayload, _ := json.Marshal(map[string]string{
-		"person_image":  req.PersonImage,
-		"garment_image": req.GarmentImage,
-		"cloth_type":    req.ClothType,
+	payload, _ := json.Marshal(map[string]string{
+		"person_image": req.PersonImage,
+		"shoe_image":   req.GarmentImage,
 	})
 
-	localReq, _ := http.NewRequestWithContext(ctx, "POST", catvtonLocalURL+"/api/tryon", bytes.NewReader(localPayload))
-	localReq.Header.Set("Content-Type", "application/json")
-
-	log.Printf("🧥 Sending to local CatVTON: %d bytes payload", len(localPayload))
+	shoesReq, err := http.NewRequestWithContext(ctx, "POST", ladivtonShoesURL+"/api/tryon", bytes.NewReader(payload))
+	if err != nil {
+		job.fail(fmt.Sprintf("Failed to create request: %v", err))
+		return
+	}
+	shoesReq.Header.Set("Content-Type", "application/json")
 
 	// Send periodic progress updates while waiting
 	done := make(chan bool)
@@ -1655,46 +2032,42 @@ func runTryOnJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 				return
 			case <-ticker.C:
 				elapsed += 10
-				job.updateStatus("processing", fmt.Sprintf("🖥️ Still processing locally... (%ds elapsed)", elapsed))
+				job.updateStatus("processing", fmt.Sprintf("👟 Still processing shoes... (%ds elapsed)", elapsed))
 			}
 		}
 	}()
 
-	// No hard timeout — rely on ctx cancellation (user can cancel via SSE job queue)
-	longClient := &http.Client{}
-	localResp, localErr := longClient.Do(localReq)
-	close(done) // Stop progress updates
-	if localErr != nil {
-		log.Printf("❌ Local CatVTON request failed: %v", localErr)
+	resp, err := http.DefaultClient.Do(shoesReq)
+	close(done)
+
+	if err != nil {
+		log.Printf("❌ LaDI-VTON-Shoes request failed: %v", err)
 		if ctx.Err() != nil {
-			log.Printf("❌ Context cancelled: %v", ctx.Err())
 			return
 		}
-		job.fail("Virtual try-on failed (both cloud and local): " + localErr.Error())
+		job.fail(fmt.Sprintf("Shoe try-on failed: %v", err))
 		return
 	}
-	defer localResp.Body.Close()
+	defer resp.Body.Close()
 
-	log.Printf("🧥 Local CatVTON response: status=%d", localResp.StatusCode)
+	log.Printf("👟 LaDI-VTON-Shoes response: status=%d", resp.StatusCode)
 
-	body, _ := io.ReadAll(localResp.Body)
-	log.Printf("🧥 Local CatVTON response body: %d bytes", len(body))
+	body, _ := io.ReadAll(resp.Body)
 
-	if localResp.StatusCode != http.StatusOK {
-		log.Printf("❌ Local CatVTON error response: %s", string(body))
-		job.fail(fmt.Sprintf("Local try-on failed (status %d): %s", localResp.StatusCode, string(body)))
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("❌ LaDI-VTON-Shoes error response: %s", string(body))
+		job.fail(fmt.Sprintf("Shoe try-on failed (status %d): %s", resp.StatusCode, string(body)))
 		return
 	}
 
 	var result TryOnResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		log.Printf("❌ Failed to parse local response: %v, body: %s", err, string(body))
-		job.fail("Failed to parse local result: " + err.Error())
+		log.Printf("❌ Failed to parse shoe response: %v", err)
+		job.fail("Failed to parse shoe result: " + err.Error())
 		return
 	}
 
-	log.Printf("🧥 Local CatVTON result: has_image=%v, image_len=%d", result.Image != "", len(result.Image))
-	log.Printf("🧥 Local CatVTON try-on complete in %v", time.Since(start))
+	log.Printf("👟 LaDI-VTON-Shoes try-on complete in %v", time.Since(start))
 	job.complete(&result)
 }
 
@@ -2693,4 +3066,564 @@ func parseDetectOutfitItemsResponse(response string) *DetectOutfitItemsResponse 
 	}
 
 	return &result
+}
+
+// handleScrapeURL scrapes product info from a URL using simple OG tag parsing
+func handleScrapeURL(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.URL == "" {
+		writeError(w, http.StatusBadRequest, "URL is required")
+		return
+	}
+
+	log.Printf("🕸️ Scraping URL: %s", req.URL)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(req.URL)
+	if err != nil {
+		log.Printf("❌ Failed to fetch URL %s: %v", req.URL, err)
+		writeError(w, http.StatusBadGateway, "Failed to fetch URL: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("❌ Failed to fetch URL %s: Status %d", req.URL, resp.StatusCode)
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Failed to fetch URL (Status %d)", resp.StatusCode))
+		return
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("❌ Failed to read response body from %s: %v", req.URL, err)
+		writeError(w, http.StatusInternalServerError, "Failed to read response body")
+		return
+	}
+
+	htmlContent := string(body)
+
+	extractTag := func(property string) string {
+		// Look for <meta property="property" content="...">
+		re := regexp.MustCompile(fmt.Sprintf(`<meta\s+(?:property|name)=["']%s["']\s+content=["']([^"']+)["']`, regexp.QuoteMeta(property)))
+		matches := re.FindStringSubmatch(htmlContent)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+		// Try reverse order: content="..." property="..."
+		re = regexp.MustCompile(fmt.Sprintf(`<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']%s["']`, regexp.QuoteMeta(property)))
+		matches = re.FindStringSubmatch(htmlContent)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+		return ""
+	}
+
+	title := extractTag("og:title")
+	if title == "" {
+		// Fallback to <title>
+		re := regexp.MustCompile(`<title>([^<]+)</title>`)
+		matches := re.FindStringSubmatch(htmlContent)
+		if len(matches) > 1 {
+			title = matches[1]
+		}
+	}
+
+	description := extractTag("og:description")
+	siteName := extractTag("og:site_name")
+
+	// Extract all potential product images
+	var candidateImages []string
+	seenImages := make(map[string]bool)
+
+	// Helper to add image if new
+	addImage := func(url string) {
+		if url == "" || seenImages[url] {
+			return
+		}
+		// Fix relative URLs
+		if strings.HasPrefix(url, "//") {
+			url = "https:" + url
+		} else if strings.HasPrefix(url, "/") {
+			// simple base URL logic
+			baseURLParts := strings.Split(req.URL, "/")
+			if len(baseURLParts) > 2 {
+				url = baseURLParts[0] + "//" + baseURLParts[2] + url
+			}
+		}
+
+		seenImages[url] = true
+		candidateImages = append(candidateImages, url)
+	}
+
+	// 1. og:image (high priority)
+	if ogImg := extractTag("og:image"); ogImg != "" {
+		addImage(ogImg)
+	}
+
+	// 2. JSON-LD images (often high quality product shots)
+	// Simple regex for "image": "url" or "image": ["url", ...] inside script tags
+	jsonLdRe := regexp.MustCompile(`<script type="application/ld\+json">([\s\S]*?)</script>`)
+	ldMatches := jsonLdRe.FindAllStringSubmatch(htmlContent, -1)
+	for _, match := range ldMatches {
+		if len(match) > 1 {
+			// Look for "image": "..." or "image": [...]
+			// Very naive regex, but might catch some
+			imgRe := regexp.MustCompile(`"image"\s*:\s*(?:\[\s*)?"([^"]+)"`)
+			imgMatches := imgRe.FindAllStringSubmatch(match[1], -1)
+			for _, im := range imgMatches {
+				if len(im) > 1 {
+					addImage(im[1])
+				}
+			}
+		}
+	}
+
+	// 3. Regular <img> tags (limit to first 10 large-ish looking ones to save AI tokens)
+	imgTagRe := regexp.MustCompile(`<img[^>]+src=["']([^"']+)["']`)
+	imgTagMatches := imgTagRe.FindAllStringSubmatch(htmlContent, -1)
+	for i, match := range imgTagMatches {
+		if i > 5 {
+			break
+		} // limit
+		if len(match) > 1 {
+			addImage(match[1])
+		}
+	}
+
+	// Limit candidates
+	if len(candidateImages) > 5 {
+		candidateImages = candidateImages[:5]
+	}
+
+	selectedImageURL := ""
+
+	// If we have multiple images and AI is ready, ask AI to pick the best "no model" one
+	if len(candidateImages) > 1 && isModelAvailable(visionModel) {
+		log.Printf("🤖 Asking AI to pick best product image from %d candidates...", len(candidateImages))
+
+		for i, imgUrl := range candidateImages {
+			if i >= 3 {
+				break
+			} // Check top 3 only
+
+			log.Printf("   Checking candidate %d: %s", i, imgUrl)
+			// Download to memory
+			resp, err := client.Get(imgUrl)
+			if err != nil {
+				continue
+			}
+
+			data, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				continue
+			}
+
+			// Convert to base64
+			b64 := base64.StdEncoding.EncodeToString(data)
+
+			// Ask LLaVA: "Is this a plain product shot without a model?"
+			prompt := `Does this image show a clothing item on a plain background or ghost mannequin, WITHOUT a human model visible? 
+			Respond with YES or NO.`
+
+			ollamaResp, err := callOllama(prompt, []string{b64}, visionModel)
+			if err == nil {
+				ans := strings.ToUpper(strings.TrimSpace(ollamaResp.Response))
+				log.Printf("   AI says: %s", ans)
+				if strings.Contains(ans, "YES") {
+					selectedImageURL = imgUrl
+					break // Found one!
+				}
+			}
+		}
+	}
+
+	// Fallback to first candidate (usually og:image)
+	if selectedImageURL == "" && len(candidateImages) > 0 {
+		selectedImageURL = candidateImages[0]
+	}
+
+	if selectedImageURL == "" {
+		log.Printf("⚠️  Scrape warning: No suitable image found for %s", req.URL)
+		writeError(w, http.StatusNotFound, "No product image found")
+		return
+	}
+
+	// Download and save the SELECTED image
+	log.Printf("⬇️ Downloading selected image: %s", selectedImageURL)
+	finalImgResp, err := client.Get(selectedImageURL)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Failed to download image: "+err.Error())
+		return
+	}
+	defer finalImgResp.Body.Close()
+
+	finalImgBytes, err := io.ReadAll(finalImgResp.Body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to read image data")
+		return
+	}
+
+	// Generate filename
+	ext := ".jpg"
+	if ct := http.DetectContentType(finalImgBytes); ct == "image/png" {
+		ext = ".png"
+	} else if ct == "image/webp" {
+		ext = ".webp"
+	}
+
+	filename := fmt.Sprintf("scraped_%d%s", time.Now().UnixNano(), ext)
+	localDir := "../images"
+	if err := os.MkdirAll(localDir, 0755); err != nil {
+		log.Printf("⚠️  Failed to create images directory: %v", err)
+	}
+	localPath := filepath.Join(localDir, filename) // Save to mockups/images
+
+	if err := os.WriteFile(localPath, finalImgBytes, 0644); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to save image locally: "+err.Error())
+		return
+	}
+
+	// Return local URL
+	localURL := fmt.Sprintf("http://localhost:%s/images/%s", getEnv("PORT", "8556"), filename)
+
+	log.Printf("✅ Scraped & Saved: %s -> %s", req.URL, localURL)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"title":        title,
+		"image_url":    localURL, // Return local URL
+		"original_url": req.URL,
+		"description":  description,
+		"site_name":    siteName,
+	})
+}
+
+func runScrapeJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
+	var req ScrapeRequest
+	if err := json.Unmarshal(payload, &req); err != nil {
+		job.fail("Invalid payload: " + err.Error())
+		return
+	}
+
+	job.updateStatus("processing", fmt.Sprintf("Scraping URL: %s", req.URL))
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(req.URL)
+	if err != nil {
+		job.fail("Failed to fetch URL: " + err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		job.fail(fmt.Sprintf("Failed to fetch URL (Status %d)", resp.StatusCode))
+		return
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		job.fail("Failed to read response body")
+		return
+	}
+
+	htmlContent := string(body)
+
+	// Helper function for regex extraction
+	extractTag := func(property string) string {
+		re := regexp.MustCompile(fmt.Sprintf(`<meta\s+(?:property|name)=["']%s["']\s+content=["']([^"']+)["']`, regexp.QuoteMeta(property)))
+		matches := re.FindStringSubmatch(htmlContent)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+		re = regexp.MustCompile(fmt.Sprintf(`<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']%s["']`, regexp.QuoteMeta(property)))
+		matches = re.FindStringSubmatch(htmlContent)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+		return ""
+	}
+
+	title := extractTag("og:title")
+	if title == "" {
+		re := regexp.MustCompile(`<title>([^<]+)</title>`)
+		matches := re.FindStringSubmatch(htmlContent)
+		if len(matches) > 1 {
+			title = matches[1]
+		}
+	}
+
+	description := extractTag("og:description")
+	siteName := extractTag("og:site_name")
+
+	var category, color, brand, price string
+
+	// AI Extraction from HTML text (if model available)
+	// We'll strip scripts/styles and get visible text to save context window
+	if isModelAvailable(textModel) || isModelAvailable(cloudTextModel) {
+		job.updateStatus("processing", "AI analyzing page content...")
+
+		// Simple HTML text extraction
+		cleanText := htmlContent
+		// Remove scripts/styles
+		reScript := regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
+		cleanText = reScript.ReplaceAllString(cleanText, "")
+		reStyle := regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
+		cleanText = reStyle.ReplaceAllString(cleanText, "")
+		// Remove HTML tags
+		reTags := regexp.MustCompile(`<[^>]*>`)
+		cleanText = reTags.ReplaceAllString(cleanText, " ")
+		// Collapse whitespace
+		reSpace := regexp.MustCompile(`\s+`)
+		cleanText = reSpace.ReplaceAllString(cleanText, " ")
+		// Limit length
+		if len(cleanText) > 4000 {
+			cleanText = cleanText[:4000]
+		}
+
+		prompt := fmt.Sprintf(`Analyze this product page text and extract details.
+		
+		Text: "%s"
+		
+		Return ONLY JSON:
+		{
+			"title": "Product Name",
+			"description": "Short description",
+			"category": "Tops/Bottoms/Shoes/Outerwear/Accessories/Dresses",
+			"color": "Main color",
+			"brand": "Brand Name",
+			"price": "Price if found (e.g. $50)"
+		}`, cleanText)
+
+		model := textModel
+		if ollamaCloud {
+			model = cloudTextModel
+		}
+
+		if aiResp, err := callOllama(prompt, nil, model); err == nil {
+			// Parse JSON
+			var extracted struct {
+				Title       string `json:"title"`
+				Description string `json:"description"`
+				Category    string `json:"category"`
+				Color       string `json:"color"`
+				Brand       string `json:"brand"`
+				Price       string `json:"price"`
+			}
+
+			// Clean response markdown
+			jsonStr := aiResp.Response
+			if idx := strings.Index(jsonStr, "{"); idx != -1 {
+				jsonStr = jsonStr[idx:]
+				if lastIdx := strings.LastIndex(jsonStr, "}"); lastIdx != -1 {
+					jsonStr = jsonStr[:lastIdx+1]
+					if err := json.Unmarshal([]byte(jsonStr), &extracted); err == nil {
+						log.Printf("🤖 AI Extracted: %+v", extracted)
+
+						// Merge (prefer AI for empty fields, or override if generic)
+						if title == "" || strings.Contains(title, "http") {
+							title = extracted.Title
+						}
+						if description == "" {
+							description = extracted.Description
+						}
+						if siteName == "" {
+							siteName = extracted.Brand
+						}
+
+						// Capture extra fields
+						category = extracted.Category
+						color = extracted.Color
+						brand = extracted.Brand
+						price = extracted.Price
+					}
+				}
+			}
+		}
+	}
+
+	// Image extraction logic
+	var candidateImages []string
+	seenImages := make(map[string]bool)
+
+	addImage := func(url string) {
+		if url == "" || seenImages[url] {
+			return
+		}
+		if strings.HasPrefix(url, "//") {
+			url = "https:" + url
+		} else if strings.HasPrefix(url, "/") {
+			baseURLParts := strings.Split(req.URL, "/")
+			if len(baseURLParts) > 2 {
+				url = baseURLParts[0] + "//" + baseURLParts[2] + url
+			}
+		}
+		seenImages[url] = true
+		candidateImages = append(candidateImages, url)
+	}
+
+	if ogImg := extractTag("og:image"); ogImg != "" {
+		addImage(ogImg)
+	}
+
+	jsonLdRe := regexp.MustCompile(`<script type="application/ld\+json">([\s\S]*?)</script>`)
+	ldMatches := jsonLdRe.FindAllStringSubmatch(htmlContent, -1)
+	for _, match := range ldMatches {
+		if len(match) > 1 {
+			imgRe := regexp.MustCompile(`"image"\s*:\s*(?:\[\s*)?"([^"]+)"`)
+			imgMatches := imgRe.FindAllStringSubmatch(match[1], -1)
+			for _, im := range imgMatches {
+				if len(im) > 1 {
+					addImage(im[1])
+				}
+			}
+		}
+	}
+
+	imgTagRe := regexp.MustCompile(`<img[^>]+src=["']([^"']+)["']`)
+	imgTagMatches := imgTagRe.FindAllStringSubmatch(htmlContent, -1)
+	for i, match := range imgTagMatches {
+		if i > 5 {
+			break
+		}
+		if len(match) > 1 {
+			addImage(match[1])
+		}
+	}
+
+	if len(candidateImages) > 5 {
+		candidateImages = candidateImages[:5]
+	}
+
+	selectedImageURL := ""
+
+	// AI Selection
+	if len(candidateImages) > 1 && isModelAvailable(visionModel) {
+		job.updateStatus("processing", "AI selecting best product image...")
+		log.Printf("🤖 Asking AI to pick best product image from %d candidates...", len(candidateImages))
+
+		for i, imgUrl := range candidateImages {
+			if i >= 3 {
+				break
+			}
+
+			if ctx.Err() != nil {
+				return
+			}
+
+			// Download to memory
+			imgResp, err := client.Get(imgUrl)
+			if err != nil {
+				continue
+			}
+
+			data, err := io.ReadAll(imgResp.Body)
+			imgResp.Body.Close()
+			if err != nil {
+				continue
+			}
+
+			b64 := base64.StdEncoding.EncodeToString(data)
+			prompt := `Does this image show a clothing item on a plain background or ghost mannequin, WITHOUT a human model visible? Respond with YES or NO.`
+
+			ollamaResp, err := callOllama(prompt, []string{b64}, visionModel)
+			if err == nil {
+				ans := strings.ToUpper(strings.TrimSpace(ollamaResp.Response))
+				if strings.Contains(ans, "YES") {
+					selectedImageURL = imgUrl
+					break
+				}
+			}
+		}
+	}
+
+	if selectedImageURL == "" && len(candidateImages) > 0 {
+		selectedImageURL = candidateImages[0]
+	}
+
+	if selectedImageURL == "" {
+		job.fail("No suitable product image found")
+		return
+	}
+
+	// Download final image
+	job.updateStatus("processing", "Downloading image...")
+	finalImgResp, err := client.Get(selectedImageURL)
+	if err != nil {
+		job.fail("Failed to download image: " + err.Error())
+		return
+	}
+	defer finalImgResp.Body.Close()
+
+	finalImgBytes, err := io.ReadAll(finalImgResp.Body)
+	if err != nil {
+		job.fail("Failed to read image data")
+		return
+	}
+
+	// Remove background (if rembg available)
+	if rembgAvailable() {
+		job.updateStatus("processing", "Removing background...")
+		if cleanedBytes, err := removeBackgroundFromBytes(finalImgBytes); err == nil {
+			finalImgBytes = cleanedBytes
+			log.Printf("✅ Background removed for scraped image")
+		} else {
+			log.Printf("⚠️ Background removal failed, using original: %v", err)
+		}
+	}
+
+	contentType := http.DetectContentType(finalImgBytes)
+	ext := ".jpg"
+	if contentType == "image/png" {
+		ext = ".png"
+	} else if contentType == "image/webp" {
+		ext = ".webp"
+	}
+
+	var finalURL string
+
+	// Upload to S3 if available
+	if s3Client != nil {
+		filename := fmt.Sprintf("items/scraped_%d%s", time.Now().UnixNano(), ext)
+		s3URL, err := uploadBytesToS3(filename, finalImgBytes, contentType)
+		if err == nil {
+			finalURL = s3URL
+		} else {
+			log.Printf("⚠️ S3 upload failed: %v, falling back to local storage", err)
+		}
+	}
+
+	// Fallback to local storage if S3 failed or not configured
+	if finalURL == "" {
+		filename := fmt.Sprintf("scraped_%d%s", time.Now().UnixNano(), ext)
+		localDir := "../images"
+		os.MkdirAll(localDir, 0755)
+		localPath := filepath.Join(localDir, filename)
+		if err := os.WriteFile(localPath, finalImgBytes, 0644); err != nil {
+			job.fail("Failed to save image locally: " + err.Error())
+			return
+		}
+		finalURL = fmt.Sprintf("http://localhost:%s/images/%s", getEnv("PORT", "8556"), filename)
+	}
+
+	log.Printf("✅ Scrape Job Complete: %s -> %s", req.URL, finalURL)
+
+	job.complete(ScrapeResponse{
+		Title:       title,
+		ImageURL:    finalURL,
+		Description: description,
+		SiteName:    siteName,
+		OriginalURL: req.URL,
+		Category:    category,
+		Color:       color,
+		Brand:       brand,
+		Price:       price,
+	})
 }

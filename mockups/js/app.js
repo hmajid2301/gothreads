@@ -52,23 +52,7 @@ let _notifCounter = 0;
 window._activeJobs = {};
 
 function initNotificationPanel() {
-  if (document.getElementById('ai-job-notifications')) return;
-  const panel = document.createElement('div');
-  panel.id = 'ai-job-notifications';
-  panel.style.cssText = `
-    position: fixed;
-    bottom: 5rem;
-    right: 1.5rem;
-    width: 320px;
-    max-height: 60vh;
-    overflow-y: auto;
-    z-index: 1100;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    pointer-events: none;
-  `;
-  document.body.appendChild(panel);
+  // Notification panel disabled — upload queue panel handles progress display
 }
 
 function addJobNotification(jobId, label) {
@@ -147,7 +131,7 @@ function cancelAIJob(jobId) {
  * Submit an AI job and return a Promise that resolves with the result.
  * Shows progress in the bottom-right notification panel via SSE.
  */
-async function submitAIJob(type, payload, label = null) {
+async function submitAIJob(type, payload, label = null, options = {}) {
   const displayLabel = label || type.replace(/-/g, ' ');
 
   const resp = await fetch(`${AI_API_URL}/ai/jobs`, {
@@ -162,6 +146,9 @@ async function submitAIJob(type, payload, label = null) {
   }
 
   const { id: jobId } = await resp.json();
+  
+  if (options.onJobId) options.onJobId(jobId);
+
   const notifId = addJobNotification(jobId, displayLabel);
 
   return new Promise((resolve, reject) => {
@@ -170,6 +157,7 @@ async function submitAIJob(type, payload, label = null) {
 
     evtSource.addEventListener('status', (e) => {
       updateJobNotification(notifId, 'processing', e.data);
+      if (options.onProgress) options.onProgress(e.data);
     });
 
     evtSource.addEventListener('result', (e) => {
@@ -545,6 +533,21 @@ function closeModal() {
 // UPLOAD HANDLING
 // ============================================================================
 
+// ============================================================================
+// UPLOAD QUEUE (non-blocking, Dropbox-style)
+// ============================================================================
+
+const uploadQueue = [];
+let uploadQueueProcessing = false;
+
+function toggleUploadArea() {
+  const section = document.getElementById('upload-section');
+  if (!section) return;
+  const isHidden = section.style.display === 'none';
+  section.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 function initUpload() {
   const uploadArea = document.querySelector('.upload-area');
   const uploadInput = document.getElementById('upload-input');
@@ -580,176 +583,264 @@ function initUpload() {
     uploadArea.classList.remove('drag-over');
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      handleMultipleFileUploads(files);
+      enqueueFiles(files);
     }
   });
 
   // File input
   uploadInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
-      handleMultipleFileUploads(e.target.files);
+      enqueueFiles(e.target.files);
+      e.target.value = ''; // allow re-selecting same files
     }
   });
 }
 
-async function handleMultipleFileUploads(files) {
+function enqueueFiles(files) {
   const fileArray = Array.from(files);
-
-  if (fileArray.length === 0) return;
-
-  // Show modal with progress
-  showBatchUploadModal(fileArray.length);
-
-  let successCount = 0;
-  let failCount = 0;
-
-  for (let i = 0; i < fileArray.length; i++) {
-    const file = fileArray[i];
-    updateBatchUploadProgress(i + 1, fileArray.length, file.name);
-
-    const result = await handleSingleFileUpload(file, false); // Don't redirect
-    if (result) {
-      successCount++;
-    } else {
-      failCount++;
+  for (const file of fileArray) {
+    // Validate
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      showToast(`${file.name}: unsupported format`, 'error');
+      continue;
     }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast(`${file.name}: too large (max 10MB)`, 'error');
+      continue;
+    }
+
+    const queueItem = {
+      id: 'uq-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      file,
+      status: 'queued',     // queued | removing-bg | uploading | analyzing | saving | done | failed
+      statusText: 'Queued',
+      thumb: null,
+      error: null,
+    };
+
+    // Generate thumbnail
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      queueItem.thumb = e.target.result;
+      renderUploadQueuePanel();
+    };
+    reader.readAsDataURL(file);
+
+    uploadQueue.push(queueItem);
   }
 
-  closeModal();
-
-  if (successCount > 0) {
-    showToast(`Successfully uploaded ${successCount} item${successCount > 1 ? 's' : ''}! Review them below.`, 'success');
-    setTimeout(() => {
-      window.location.href = 'wardrobe.html?recent=true';
-    }, 1500);
-  }
-
-  if (failCount > 0) {
-    showToast(`Failed to upload ${failCount} item${failCount > 1 ? 's' : ''}`, 'error');
-  }
+  renderUploadQueuePanel();
+  processUploadQueue();
 }
 
-function showBatchUploadModal(totalCount) {
-  showModal('Uploading Items', `
-    <div style="text-align: center; padding: 2rem;">
-      <div class="spinner"></div>
-      <p id="batch-upload-status" style="margin-top: 1rem; color: var(--text-neutral);">
-        Processing 0 of ${totalCount} items...
-      </p>
-      <p id="batch-upload-file" style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-neutral);"></p>
-      <div class="progress-bar" style="margin-top: 1rem;">
-        <div class="progress-fill" id="batch-upload-progress" style="width: 0%"></div>
+function getOrCreateQueuePanel() {
+  let panel = document.getElementById('upload-queue-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'upload-queue-panel';
+    panel.className = 'upload-queue-panel';
+    panel.innerHTML = `
+      <div class="upload-queue-header" onclick="toggleUploadQueuePanel()">
+        <span class="upload-queue-title" id="upload-queue-title">Uploading...</span>
+        <span class="upload-queue-toggle">&#9660;</span>
       </div>
-    </div>
-  `, []);
+      <div class="upload-queue-body" id="upload-queue-body"></div>
+    `;
+    document.body.appendChild(panel);
+  }
+  return panel;
 }
 
-function updateBatchUploadProgress(current, total, filename) {
-  const statusEl = document.getElementById('batch-upload-status');
-  const fileEl = document.getElementById('batch-upload-file');
-  const progressEl = document.getElementById('batch-upload-progress');
-
-  if (statusEl) statusEl.textContent = `Processing ${current} of ${total} items...`;
-  if (fileEl) fileEl.textContent = filename;
-  if (progressEl) progressEl.style.width = `${(current / total) * 100}%`;
+function toggleUploadQueuePanel() {
+  const panel = document.getElementById('upload-queue-panel');
+  if (panel) panel.classList.toggle('collapsed');
 }
 
-async function handleSingleFileUpload(file, shouldRedirect = true) {
-  // Validate file type
-  const validTypes = ['image/jpeg', 'image/png', 'image/webp' ];
-  if (!validTypes.includes(file.type)) {
-    showToast('Please upload a JPEG, PNG, or WebP image', 'error');
-    return false;
+function renderUploadQueuePanel() {
+  if (uploadQueue.length === 0) {
+    const panel = document.getElementById('upload-queue-panel');
+    if (panel) panel.remove();
+    return;
   }
 
-  // Validate file size (10MB)
-  if (file.size > 10 * 1024 * 1024) {
-    showToast('File too large. Maximum size is 10MB', 'error');
-    return false;
+  const panel = getOrCreateQueuePanel();
+  const body = document.getElementById('upload-queue-body');
+  const title = document.getElementById('upload-queue-title');
+
+  const pending = uploadQueue.filter(q => q.status !== 'done' && q.status !== 'failed').length;
+  const done = uploadQueue.filter(q => q.status === 'done').length;
+  const failed = uploadQueue.filter(q => q.status === 'failed').length;
+  const total = uploadQueue.length;
+
+  if (pending > 0) {
+    title.textContent = `Uploading ${pending} of ${total} item${total > 1 ? 's' : ''}...`;
+  } else if (failed > 0) {
+    title.textContent = `${done} uploaded, ${failed} failed`;
+  } else {
+    title.textContent = `${done} item${done > 1 ? 's' : ''} uploaded`;
   }
 
+  body.innerHTML = uploadQueue.map(q => {
+    const thumbSrc = q.thumb || '';
+    const thumbStyle = thumbSrc ? `background-image: url('${thumbSrc}'); background-size: cover; background-position: center;` : '';
+
+    let actionHTML = '';
+    if (q.status === 'failed') {
+      actionHTML = `<button class="retry-btn" onclick="retryUploadQueueItem('${q.id}')">Retry</button>`;
+    } else if (q.status === 'done') {
+      actionHTML = '<span style="color: #27AE60; font-size: 1.25rem;">&#10003;</span>';
+    } else if (q.status === 'queued') {
+      actionHTML = '<span style="color: var(--text-neutral); font-size: 0.75rem;">&#8987;</span>';
+    } else {
+      actionHTML = '<div class="spinner"></div>';
+    }
+
+    const statusClass = q.status === 'failed' ? 'error' : q.status === 'done' ? 'done' : '';
+
+    return `
+      <div class="upload-queue-item" id="${q.id}">
+        <div class="upload-queue-thumb" style="${thumbStyle}"></div>
+        <div class="upload-queue-info">
+          <div class="upload-queue-name">${q.file.name}</div>
+          <div class="upload-queue-status ${statusClass}">${q.statusText}</div>
+        </div>
+        <div class="upload-queue-action">${actionHTML}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateQueueItemStatus(id, status, statusText) {
+  const item = uploadQueue.find(q => q.id === id);
+  if (!item) return;
+  item.status = status;
+  item.statusText = statusText;
+  renderUploadQueuePanel();
+}
+
+function retryUploadQueueItem(id) {
+  const item = uploadQueue.find(q => q.id === id);
+  if (!item) return;
+  item.status = 'queued';
+  item.statusText = 'Queued';
+  item.error = null;
+  renderUploadQueuePanel();
+  processUploadQueue();
+}
+
+async function processUploadQueue() {
+  if (uploadQueueProcessing) return;
+  uploadQueueProcessing = true;
+
+  while (true) {
+    const next = uploadQueue.find(q => q.status === 'queued');
+    if (!next) break;
+    await processQueueItem(next);
+  }
+
+  uploadQueueProcessing = false;
+
+  // Auto-dismiss panel after all done (if no failures)
+  const hasFailed = uploadQueue.some(q => q.status === 'failed');
+  if (!hasFailed && uploadQueue.length > 0 && uploadQueue.every(q => q.status === 'done')) {
+    setTimeout(() => {
+      // Only dismiss if still all done (user may have added more)
+      if (uploadQueue.every(q => q.status === 'done')) {
+        uploadQueue.length = 0;
+        renderUploadQueuePanel();
+      }
+    }, 5000);
+  }
+}
+
+async function processQueueItem(queueItem) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = async function(e) {
       let imageData = e.target.result;
 
       try {
-        // First, detect if there are multiple clothing items
-        let detectedItems = null;
+        // Detect multiple clothing items
         if (aiAvailable) {
-          updateProcessingStatus('Detecting clothing items...');
-          detectedItems = await detectOutfitItems(imageData);
+          updateQueueItemStatus(queueItem.id, 'analyzing', 'Detecting items...');
+          const detectedItems = await detectOutfitItems(imageData);
 
           if (detectedItems && detectedItems.count > 1) {
-            // Multiple items detected - ask user what they want
             const selectedItems = await askUserWhichItems(detectedItems);
-
             if (!selectedItems || selectedItems.length === 0) {
-              // User cancelled or didn't select anything
-              resolve(false);
+              updateQueueItemStatus(queueItem.id, 'failed', 'Cancelled');
+              resolve();
               return;
             }
-
-            // TODO: Process each selected item separately (background removal + segmentation)
-            // For now, just process the whole image
-            showToast(`Processing ${selectedItems.length} items in background...`, 'info');
           }
         }
 
-        // Remove background first (always)
-        updateProcessingStatus('Removing background...');
+        // Remove background
+        updateQueueItemStatus(queueItem.id, 'removing-bg', 'Removing background...');
         const bgRemovedImage = await removeBackgroundWithAI(imageData);
         if (bgRemovedImage) {
           imageData = bgRemovedImage;
-          console.log('Background removed successfully');
-        } else {
-          console.log('Background removal failed, using original image');
         }
 
-        // Upload image to S3
-        updateProcessingStatus('Uploading image to storage...');
+        // Upload to S3 (Skip if already scraped and on S3)
+        updateQueueItemStatus(queueItem.id, 'uploading', 'Uploading...');
         let imageURL = imageData;
-        try {
-          const uploadResponse = await fetch('http://localhost:8556/api/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: imageData })
-          });
-
-          if (uploadResponse.ok) {
-            const uploadResult = await uploadResponse.json();
-            imageURL = uploadResult.url;
-            console.log('Image uploaded to S3:', imageURL);
-          } else {
-            console.warn('S3 upload failed, falling back to base64');
-          }
-        } catch (uploadError) {
-          console.warn('S3 upload error, falling back to base64:', uploadError);
+        
+        if (queueItem.scrapedData && queueItem.scrapedData.image_url && queueItem.scrapedData.image_url.startsWith('http')) {
+             imageURL = queueItem.scrapedData.image_url;
+             console.log('Skipping upload, using scraped URL:', imageURL);
+        } else {
+            try {
+              const uploadResponse = await fetch('http://localhost:8556/api/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageData })
+              });
+              if (uploadResponse.ok) {
+                const uploadResult = await uploadResponse.json();
+                imageURL = uploadResult.url;
+              }
+            } catch (uploadError) {
+              console.warn('S3 upload error, falling back to base64:', uploadError);
+            }
         }
 
-        // Try AI analysis if available
+        // AI analysis (Skip if scraped data is sufficient)
         let aiResult = null;
-        if (aiAvailable) {
-          updateProcessingStatus('Analyzing clothing with AI...');
-          aiResult = await analyzeImageWithAI(imageData);
-          if (aiResult) {
-            console.log('AI Analysis Result:', aiResult);
-          }
+        let skipAI = false;
+        
+        // If we have scraped data, we might not need full AI analysis
+        if (queueItem.scrapedData && queueItem.scrapedData.category && queueItem.scrapedData.color) {
+             skipAI = true;
+             // Construct mock aiResult from scraped data
+             aiResult = {
+                 name: queueItem.scrapedData.title,
+                 description: queueItem.scrapedData.description,
+                 category: queueItem.scrapedData.category,
+                 color: queueItem.scrapedData.color,
+                 brand: queueItem.scrapedData.brand,
+                 tags: [], // Tags might be missing, but that's okay
+                 raw_response: "Scraped via AI Text Analysis"
+             };
         }
 
-        // Check if AI analysis has real data (not defaults)
+        if (aiAvailable && !skipAI) {
+          updateQueueItemStatus(queueItem.id, 'analyzing', 'Analyzing with AI...');
+          aiResult = await analyzeImageWithAI(imageData);
+        }
+
         const hasValidAIData = aiResult &&
                                aiResult.category &&
-                               aiResult.category !== 'Unknown' &&
-                               aiResult.description &&
-                               aiResult.description !== 'Unable to analyze';
+                               aiResult.category !== 'Unknown';
 
-        // Save to database via API
+        // Save to DB
+        updateQueueItemStatus(queueItem.id, 'saving', 'Saving...');
         const newItem = {
-          name: hasValidAIData ? (aiResult.name || aiResult.description.substring(0, 50)) : 'Unnamed Item',
-          description: hasValidAIData ? (aiResult.description || '') : '',
+          name: (hasValidAIData ? (aiResult.name || aiResult.description.substring(0, 50)) : (queueItem.scrapedData?.title || 'Unnamed Item')),
+          description: (hasValidAIData ? (aiResult.description || '') : (queueItem.scrapedData?.description || '')),
           category: hasValidAIData ? aiResult.category : 'Uncategorized',
-          price: 0,
+          price: queueItem.scrapedData?.price ? parseFloat(queueItem.scrapedData.price.replace(/[^0-9.]/g, '')) : 0,
           color: hasValidAIData ? (aiResult.color || '') : '',
           brand: hasValidAIData ? (aiResult.brand || '') : '',
           image_url: imageURL,
@@ -757,77 +848,42 @@ async function handleSingleFileUpload(file, shouldRedirect = true) {
           ai_analysis: hasValidAIData ? (aiResult.raw_response || null) : null,
         };
 
-        try {
-          const response = await fetch('http://localhost:8556/api/items', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newItem)
-          });
+        const response = await fetch('http://localhost:8556/api/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newItem)
+        });
 
-          if (!response.ok) {
-            throw new Error('Failed to save item to database');
-          }
+        if (!response.ok) throw new Error('Failed to save');
 
-          const savedItem = await response.json();
+        updateQueueItemStatus(queueItem.id, 'done', hasValidAIData
+          ? `${aiResult.color || ''} ${aiResult.category}`.trim()
+          : 'Uploaded');
 
-          if (shouldRedirect) {
-            closeModal();
-
-            if (hasValidAIData) {
-              const brandText = aiResult.brand ? ` by ${aiResult.brand}` : '';
-              showToast(`AI detected: ${aiResult.color} ${aiResult.category}${brandText}`, 'success');
-            } else {
-              showToast('⚠️ AI could not analyze item. Please enter details manually.', 'info');
-            }
-
-            // Redirect to edit page
-            setTimeout(() => {
-              window.location.href = `item-detail.html?id=${savedItem.id}`;
-            }, 1000);
-          }
-
-          resolve(true);
-        } catch (apiError) {
-          console.error('API save error:', apiError);
-          showToast('Failed to save item: ' + apiError.message, 'error');
-          resolve(false);
+        // Refresh wardrobe grid in-place if on wardrobe page
+        if (document.getElementById('wardrobe-grid')) {
+          renderWardrobe('wardrobe-grid');
         }
       } catch (error) {
         console.error('Upload error:', error);
-        resolve(false);
+        queueItem.error = error;
+        updateQueueItemStatus(queueItem.id, 'failed', error.message || 'Upload failed');
       }
+
+      resolve();
     };
 
-    reader.onerror = () => resolve(false);
-    reader.readAsDataURL(file);
+    reader.onerror = () => {
+      updateQueueItemStatus(queueItem.id, 'failed', 'Failed to read file');
+      resolve();
+    };
+    reader.readAsDataURL(queueItem.file);
   });
 }
 
-function showProcessingModal(statusText = 'Uploading and analyzing image...') {
-  showModal('Processing Image', `
-    <div style="text-align: center; padding: 2rem;">
-      <div class="spinner"></div>
-      <p id="processing-status" style="margin-top: 1rem; color: var(--text-neutral);">${statusText}</p>
-      <div class="progress-bar" style="margin-top: 1rem;">
-        <div class="progress-fill" id="upload-progress"></div>
-      </div>
-    </div>
-  `, []);
-
-  // Animate progress (slower for AI)
-  let progress = 0;
-  const progressBar = document.getElementById('upload-progress');
-  const interval = setInterval(() => {
-    progress += 2;
-    if (progressBar) progressBar.style.width = `${Math.min(progress, 90)}%`;
-    if (progress >= 90) clearInterval(interval);
-  }, 100);
-}
-
-function updateProcessingStatus(text) {
-  const status = document.getElementById('processing-status');
-  if (status) status.textContent = text;
-}
+// Keep these for backward compat (other code may call them)
+function showProcessingModal() {}
+function updateProcessingStatus() {}
 
 // ============================================================================
 // WARDROBE GRID
@@ -1012,6 +1068,11 @@ async function renderWardrobe(containerId) {
     const wearCount = item.wear_count || 0;
     const price = item.price || 0;
     const costPerWear = wearCount > 0 ? (price / wearCount).toFixed(2) : price.toFixed(2);
+    const maxWears = item.max_wears || 5;
+    const isDirty = wearCount >= maxWears;
+    const laundryStatus = isDirty 
+      ? '<span title="Needs Laundry" style="color: #e74c3c; font-weight: bold;">🧺 Clean Me</span>' 
+      : `<span title="Wears left: ${maxWears - wearCount}" style="color: #27ae60;">✨ ${maxWears - wearCount} left</span>`;
 
     // Highlight AI-detected info or show retry button
     const aiInfo = item.ai_analysis ? `
@@ -1040,9 +1101,12 @@ async function renderWardrobe(containerId) {
         <div class="item-name">${item.name}</div>
         <div class="item-meta">${item.category} • $${price.toFixed(2)}</div>
         ${aiInfo}
-        <div class="item-stats">
+        <div class="item-stats" style="display: flex; justify-content: space-between; font-size: 0.8rem;">
           <span title="Times worn">👔 ${wearCount}</span>
-          <span title="Cost per wear">💰 $${costPerWear}</span>
+          ${laundryStatus}
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-neutral); margin-top: 2px;">
+          💰 $${costPerWear} / wear
         </div>
         ${retryButton}
       </div>
@@ -1722,15 +1786,24 @@ async function handleDressWithAI() {
   await positionItemsWithAI();
 }
 
+let activeTryOnJobId = null;
+
 async function handleTryOn() {
   if (!aiAvailable) {
     showToast('AI not available. Start the API server.', 'error');
     return;
   }
 
+  // Cancel previous running job if any
+  if (activeTryOnJobId && window._activeJobs && window._activeJobs[activeTryOnJobId]) {
+    console.log('Cancelling previous try-on job:', activeTryOnJobId);
+    window._activeJobs[activeTryOnJobId].cancel();
+  }
+
   const canvas = document.querySelector('.outfit-canvas');
   const bodyBg = canvas?.style.backgroundImage;
 
+  // Require a person/body image for try-on
   if (!bodyBg || bodyBg === 'none') {
     showToast('Please add a body/mannequin image first!', 'error');
     return;
@@ -1741,77 +1814,81 @@ async function handleTryOn() {
     return;
   }
 
-  // Use the first selected item, or first item on canvas
-  const selectedEl = document.querySelector('.canvas-item.selected');
-  const targetItemId = selectedEl ? parseInt(selectedEl.dataset.itemId) : currentOutfitItems[0].id;
-  const targetItem = currentOutfitItems.find(i => i.id === targetItemId);
+  // Group items by type
+  const bottoms = [];
+  const tops = [];
+  const others = [];
 
-  if (!targetItem) {
-    showToast('Could not find selected item', 'error');
+  for (const item of currentOutfitItems) {
+    const normCat = normalizeCategory(item.category);
+    // Shoes VTON temporarily disabled
+    if (normCat === 'Shoes') continue;
+
+    if (normCat === 'Bottoms') {
+      bottoms.push(item);
+    } else if (normCat === 'Tops' || normCat === 'Outerwear' || normCat === 'One-Pieces') {
+      tops.push(item);
+    } else {
+      others.push(item);
+    }
+  }
+
+  if (bottoms.length === 0 && tops.length === 0) {
+    showToast('No clothing items selected (shoes/accessories not supported yet)', 'warning');
     return;
   }
 
-  // Determine cloth_type from category
-  const normCat = normalizeCategory(targetItem.category);
-  let clothType = 'upper';
-  if (normCat === 'Bottoms') clothType = 'lower';
-  if (normCat === 'Outerwear') clothType = 'overall';
-
   try {
-    // Extract body image base64 from background
-    const bgUrl = bodyBg.replace(/^url\(["']?/, '').replace(/["']?\)$/, '');
-    let personImage = bgUrl;
-
-    // Convert SVG to PNG via canvas (VTON models need raster images)
-    if (bgUrl.includes('data:image/svg')) {
-      personImage = await new Promise((resolve, reject) => {
-        const img = new window.Image();
-        img.onload = () => {
-          const c = document.createElement('canvas');
-          c.width = 768;
-          c.height = 1024;
-          const ctx = c.getContext('2d');
-          ctx.fillStyle = '#F5F0E8';
-          ctx.fillRect(0, 0, c.width, c.height);
-          const scale = Math.min(c.width / img.width, c.height / img.height);
-          const x = (c.width - img.width * scale) / 2;
-          const y = (c.height - img.height * scale) / 2;
-          ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-          resolve(c.toDataURL('image/png'));
-        };
-        img.onerror = reject;
-        img.src = bgUrl;
-      });
-    } else if (bgUrl.startsWith('blob:') || bgUrl.startsWith('http')) {
-      const resp = await fetch(bgUrl);
-      const blob = await resp.blob();
-      personImage = await new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.readAsDataURL(blob);
-      });
+    // 1. Prepare Person Image
+    let personImage = "";
+    if (bodyBg && bodyBg !== 'none') {
+      const bgUrl = bodyBg.replace(/^url\(["']?/, '').replace(/["']?\)$/, '');
+      personImage = await resolveImageToBase64(bgUrl);
     }
 
-    // Get garment image (canvas items use .image, API items use .image_url)
-    let garmentImage = targetItem.image || targetItem.image_url;
-    if (garmentImage && !garmentImage.startsWith('data:')) {
-      const resp = await fetch(garmentImage);
-      const blob = await resp.blob();
-      garmentImage = await new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.readAsDataURL(blob);
-      });
+    // 2. Prepare Garments List
+    const garments = [];
+
+    // Add Bottoms (use highest z-index if multiple)
+    if (bottoms.length > 0) {
+      bottoms.sort((a, b) => (b.z || 0) - (a.z || 0));
+      const target = bottoms[0];
+      const img = await fetchImageAsBase64(target.image || target.image_url);
+      garments.push({ image: img, cloth_type: 'lower' });
     }
 
-    // Submit via generic AI job queue (SSE progress in notification panel)
+    // Add Tops (Composite if multiple)
+    if (tops.length > 0) {
+      // Sort by z-index (lowest first for painter's algorithm)
+      tops.sort((a, b) => (a.z || 0) - (b.z || 0));
+      
+      let topImg;
+      if (tops.length === 1) {
+        const target = tops[0];
+        topImg = await fetchImageAsBase64(target.image || target.image_url);
+      } else {
+        // Create composite of multiple tops (e.g. shirt + jacket)
+        // showToast('Compositing layers...', 'info'); // Handled by modal now
+        topImg = await createCompositeGarment(tops);
+      }
+
+      // Determine type: if any item is a dress/one-piece, treat whole stack as 'overall'
+      let type = 'upper';
+      if (tops.some(t => normalizeCategory(t.category) === 'One-Pieces')) {
+        type = 'overall';
+      }
+      garments.push({ image: topImg, cloth_type: type });
+    }
+
+    // 3. Submit Multi-Item Job
     const result = await submitAIJob('tryon', {
       person_image: personImage,
-      garment_image: garmentImage,
-      cloth_type: clothType
-    }, `Try-on: ${targetItem.name || 'item'}`);
+      garments: garments
+    }, `Multi-item Try-on (${garments.length} steps)`, {
+      onJobId: (id) => activeTryOnJobId = id
+    });
 
-    // Show result as the canvas background
+    // Show result
     canvas.style.backgroundImage = `url(${result.image})`;
     canvas.style.backgroundSize = 'contain';
     canvas.style.backgroundPosition = 'center';
@@ -1827,7 +1904,111 @@ async function handleTryOn() {
   }
 }
 
+async function fetchImageAsBase64(url) {
+  if (url.startsWith('data:')) return url;
+  const resp = await fetch(url);
+  const blob = await resp.blob();
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Helper to resolve CSS background URL to Base64 (handles SVG/Blob/URL)
+async function resolveImageToBase64(url) {
+    if (url.includes('data:image/svg')) {
+        return new Promise((resolve, reject) => {
+            const img = new window.Image();
+            img.onload = () => {
+                const c = document.createElement('canvas');
+                c.width = 768;
+                c.height = 1024;
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = '#F5F0E8';
+                ctx.fillRect(0, 0, c.width, c.height);
+                const scale = Math.min(c.width / img.width, c.height / img.height);
+                const x = (c.width - img.width * scale) / 2;
+                const y = (c.height - img.height * scale) / 2;
+                ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                resolve(c.toDataURL('image/png'));
+            };
+            img.onerror = reject;
+            img.src = url;
+        });
+    }
+    return fetchImageAsBase64(url);
+}
+
+// Helper to composite multiple garments into one image based on their canvas position
+async function createCompositeGarment(items) {
+    // Calculate bounding box based on DOM elements
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const itemImages = [];
+    const canvasEl = document.querySelector('.outfit-canvas');
+    const canvasRect = canvasEl.getBoundingClientRect();
+
+    for (const item of items) {
+        const el = document.querySelector(`.canvas-item[data-item-id="${item.id}"]`);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect(); 
+        
+        // Coordinates relative to canvas
+        const x = rect.left - canvasRect.left;
+        const y = rect.top - canvasRect.top;
+        const w = rect.width;
+        const h = rect.height;
+        
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + w);
+        maxY = Math.max(maxY, y + h);
+        
+        // Get image source
+        const imgEl = el.querySelector('img');
+        itemImages.push({ src: imgEl.src, x, y, w, h });
+    }
+    
+    if (itemImages.length === 0) return null;
+
+    // Create canvas for composite
+    const width = maxX - minX;
+    const height = maxY - minY;
+    // Add some padding
+    const padding = 10;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = width + padding * 2;
+    canvas.height = height + padding * 2;
+    const ctx = canvas.getContext('2d');
+    
+    // Draw items
+    for (const item of itemImages) {
+        const img = await loadImage(item.src);
+        ctx.drawImage(img, item.x - minX + padding, item.y - minY + padding, item.w, item.h);
+    }
+    
+    return canvas.toDataURL('image/png');
+}
+
+function loadImage(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+    });
+}
+
+
 async function generateOutfitSuggestion() {
+  // Cancel any running try-on job as we are changing the outfit
+  if (activeTryOnJobId && window._activeJobs && window._activeJobs[activeTryOnJobId]) {
+    console.log('Cancelling try-on due to outfit generation');
+    window._activeJobs[activeTryOnJobId].cancel();
+  }
+
   try {
     // Fetch weather for London
     const weather = await getWeatherForLocation(51.5074, -0.1278);
@@ -2397,6 +2578,23 @@ function saveOutfit() {
       <label>Notes (optional)</label>
       <textarea id="outfit-notes-input" rows="2" placeholder="Great for warm weather..."></textarea>
     </div>
+    <div class="form-group">
+      <label>Ratings (1-5)</label>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem;">
+        <div>
+          <label style="font-size: 0.8rem;">Personal</label>
+          <input type="number" id="rating-personal" min="1" max="5" value="0" style="width: 100%;">
+        </div>
+        <div>
+          <label style="font-size: 0.8rem;">Partner</label>
+          <input type="number" id="rating-partner" min="1" max="5" value="0" style="width: 100%;">
+        </div>
+        <div>
+          <label style="font-size: 0.8rem;">Social</label>
+          <input type="number" id="rating-social" min="1" max="5" value="0" style="width: 100%;">
+        </div>
+      </div>
+    </div>
   `, [
     { label: 'Cancel', onclick: 'closeModal()' },
     { label: 'Save Outfit', primary: true, onclick: 'confirmSaveOutfit()' },
@@ -2406,6 +2604,21 @@ function saveOutfit() {
 async function confirmSaveOutfit() {
   const nameInput = document.getElementById('outfit-name-input');
   const notesInput = document.getElementById('outfit-notes-input');
+  
+  // Get ratings
+  const rPersonal = parseInt(document.getElementById('rating-personal')?.value || 0);
+  const rPartner = parseInt(document.getElementById('rating-partner')?.value || 0);
+  const rSocial = parseInt(document.getElementById('rating-social')?.value || 0);
+  
+  const ratings = {
+    personal: rPersonal,
+    partner: rPartner,
+    social: rSocial
+  };
+  
+  // Calculate average for backward compatibility
+  const validRatings = [rPersonal, rPartner, rSocial].filter(r => r > 0);
+  const avgRating = validRatings.length > 0 ? validRatings.reduce((a, b) => a + b, 0) / validRatings.length : 0;
 
   const name = nameInput?.value.trim();
   if (!name) {
@@ -2431,6 +2644,8 @@ async function confirmSaveOutfit() {
     notes: notesInput?.value.trim() || '',
     body_image_url: bodyImageUrl,
     positions: positions,
+    ratings: ratings,
+    rating: avgRating // Legacy field
   };
 
   try {
@@ -2466,7 +2681,8 @@ async function confirmSaveOutfit() {
       positions: currentOutfitItems.map(i => ({ id: i.id, x: i.x, y: i.y, z: i.z })),
       bodyBackground: bgImage !== 'none' ? bgImage : null,
       wearCount: 0,
-      rating: 0,
+      rating: avgRating,
+      ratings: ratings,
       createdAt: new Date().toISOString(),
     };
 
@@ -2474,7 +2690,7 @@ async function confirmSaveOutfit() {
       const idx = appData.outfits.findIndex(o => o.id == _editingOutfitId);
       if (idx >= 0) {
         localOutfit.wearCount = appData.outfits[idx].wearCount || 0;
-        localOutfit.rating = appData.outfits[idx].rating || 0;
+        // Keep existing ratings if not provided in update (though here we provide them)
         appData.outfits[idx] = localOutfit;
       }
     } else {
@@ -3131,10 +3347,27 @@ function viewOutfitDetail(outfitId) {
     </div>
   `).join('');
 
+  // 3-Tier Rating Display
+  const rPersonal = outfit.ratings?.personal || 0;
+  const rPartner = outfit.ratings?.partner || 0;
+  const rSocial = outfit.ratings?.social || 0;
+  
+  const ratingRow = (label, val) => `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+      <span style="color: var(--text-neutral); font-size: 0.9rem;">${label}:</span>
+      <span style="color: var(--primary);">${'★'.repeat(val)}${'☆'.repeat(5-val)}</span>
+    </div>
+  `;
+
   showModal(outfit.name, `
     <div style="margin-bottom: 1rem;">
-      <div class="outfit-rating" style="font-size: 1.5rem; margin-bottom: 0.5rem;">
-        ${'★'.repeat(Math.floor(outfit.rating || 0))}${'☆'.repeat(5 - Math.floor(outfit.rating || 0))}
+      <div style="background: var(--warm-bg); padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+        ${ratingRow('Personal', rPersonal)}
+        ${ratingRow('Partner', rPartner)}
+        ${ratingRow('Social', rSocial)}
+        <button class="btn btn-secondary" style="width: 100%; margin-top: 0.5rem; font-size: 0.8rem; padding: 0.25rem;" onclick="editOutfitRating(${outfit.id});">
+          ✏️ Update Ratings
+        </button>
       </div>
       <p style="color: var(--text-neutral);">${items.length} items • Worn ${outfit.wearCount || 0} times</p>
       ${outfit.notes ? `<p style="margin-top: 1rem; padding: 1rem; background: var(--warm-bg); border-radius: 0.5rem;">${outfit.notes}</p>` : ''}
@@ -3149,6 +3382,96 @@ function viewOutfitDetail(outfitId) {
     { label: 'Edit', primary: true, onclick: `editOutfit(${outfit.id}); closeModal();` }
   ]);
 }
+
+window.editOutfitRating = function(outfitId) {
+  const outfit = appData.outfits.find(o => o.id === outfitId);
+  if (!outfit) return;
+
+  const rPersonal = outfit.ratings?.personal || 0;
+  const rPartner = outfit.ratings?.partner || 0;
+  const rSocial = outfit.ratings?.social || 0;
+
+  showModal('Rate Outfit', `
+    <p>How did this outfit perform?</p>
+    <div style="margin-top: 1rem;">
+      <div style="margin-bottom: 1rem;">
+        <label>Personal Comfort/Feel</label>
+        <div class="rating-input">
+           <input type="range" id="update-rating-personal" min="0" max="5" value="${rPersonal}" oninput="this.nextElementSibling.value = this.value">
+           <output>${rPersonal}</output>
+        </div>
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <label>Partner/Date Feedback</label>
+        <div class="rating-input">
+           <input type="range" id="update-rating-partner" min="0" max="5" value="${rPartner}" oninput="this.nextElementSibling.value = this.value">
+           <output>${rPartner}</output>
+        </div>
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <label>Social/Public Reception</label>
+        <div class="rating-input">
+           <input type="range" id="update-rating-social" min="0" max="5" value="${rSocial}" oninput="this.nextElementSibling.value = this.value">
+           <output>${rSocial}</output>
+        </div>
+      </div>
+    </div>
+  `, [
+    { label: 'Cancel', onclick: 'viewOutfitDetail(' + outfitId + ')' },
+    { label: 'Save Ratings', primary: true, onclick: `saveOutfitRating(${outfitId})` }
+  ]);
+};
+
+window.saveOutfitRating = async function(outfitId) {
+  const outfit = appData.outfits.find(o => o.id === outfitId);
+  if (!outfit) return;
+
+  const ratings = {
+    personal: parseInt(document.getElementById('update-rating-personal').value),
+    partner: parseInt(document.getElementById('update-rating-partner').value),
+    social: parseInt(document.getElementById('update-rating-social').value)
+  };
+
+  // Calculate avg
+  const valid = [ratings.personal, ratings.partner, ratings.social].filter(r => r > 0);
+  const avg = valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+
+  // Prepare minimal payload for update (we need to send everything or just patch? 
+  // The API uses PUT and updates all fields, so we need to send everything we know)
+  
+  // NOTE: In a real app we might have a PATCH endpoint. 
+  // Here we re-send existing data + new ratings.
+  const payload = {
+    name: outfit.name,
+    notes: outfit.notes || '',
+    body_image_url: outfit.bodyBackground ? outfit.bodyBackground.replace(/^url\(["']?/, '').replace(/["']?\)$/, '') : '',
+    rating: avg,
+    ratings: ratings,
+    positions: outfit.positions || []
+  };
+
+  try {
+    const resp = await fetch(`http://localhost:8556/api/outfits/${outfitId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (resp.ok) {
+      outfit.ratings = ratings;
+      outfit.rating = avg;
+      saveData(appData);
+      showToast('Ratings updated!', 'success');
+      viewOutfitDetail(outfitId); // Re-open detail view
+      renderOutfits('outfits-grid'); // Refresh grid
+    } else {
+      showToast('Failed to update ratings', 'error');
+    }
+  } catch (e) {
+    console.error('Error updating ratings:', e);
+    showToast('Error updating ratings', 'error');
+  }
+};
 
 async function logWearEvent(outfitId, date) {
   try {
@@ -3754,7 +4077,9 @@ const defaultSettings = {
   dateFormat: 'MM/DD/YYYY',
   maxWearsBeforeLaundry: 3,
   notifications: true,
-  emailSummaries: false
+  emailSummaries: false,
+  weatherLocation: 'London',
+  weatherUnit: 'C'
 };
 
 function getSettings() {
@@ -3777,6 +4102,8 @@ function initSettings() {
   const maxWearsInput = document.getElementById('setting-max-wears');
   const notificationsInput = document.getElementById('setting-notifications');
   const emailSummariesInput = document.getElementById('setting-email-summaries');
+  const locationInput = document.getElementById('setting-location');
+  const tempUnitSelect = document.getElementById('setting-temp-unit');
 
   if (autoRemoveBgInput) autoRemoveBgInput.checked = settings.autoRemoveBg;
   if (autoTagInput) autoTagInput.checked = settings.autoTag;
@@ -3786,6 +4113,8 @@ function initSettings() {
   if (maxWearsInput) maxWearsInput.value = settings.maxWearsBeforeLaundry;
   if (notificationsInput) notificationsInput.checked = settings.notifications;
   if (emailSummariesInput) emailSummariesInput.checked = settings.emailSummaries;
+  if (locationInput) locationInput.value = settings.weatherLocation;
+  if (tempUnitSelect) tempUnitSelect.value = settings.weatherUnit;
 
   // Setup save button
   const saveBtn = document.getElementById('save-settings-btn');
@@ -3834,11 +4163,55 @@ function saveSettings() {
     dateFormat: document.getElementById('setting-date-format')?.value || 'MM/DD/YYYY',
     maxWearsBeforeLaundry: parseInt(document.getElementById('setting-max-wears')?.value) || 3,
     notifications: document.getElementById('setting-notifications')?.checked ?? true,
-    emailSummaries: document.getElementById('setting-email-summaries')?.checked ?? false
+    emailSummaries: document.getElementById('setting-email-summaries')?.checked ?? false,
+    weatherLocation: document.getElementById('setting-location')?.value || 'London',
+    weatherUnit: document.getElementById('setting-temp-unit')?.value || 'C'
   };
 
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   showToast('Settings saved!', 'success');
+}
+
+function testWeatherSettings() {
+  const preview = document.getElementById('weather-preview');
+  const icon = document.getElementById('weather-preview-icon');
+  const temp = document.getElementById('weather-preview-temp');
+  const desc = document.getElementById('weather-preview-desc');
+  
+  if (preview) preview.style.display = 'block';
+  if (desc) desc.textContent = 'Loading weather...';
+  
+  // Simulate weather fetch (in production, would call real weather API)
+  setTimeout(() => {
+    const settings = getSettings();
+    const tempVal = 18; // Simulated temp in Celsius
+    const displayTemp = settings.weatherUnit === 'F' 
+      ? Math.round(tempVal * 9/5 + 32) + '°F'
+      : tempVal + '°C';
+    
+    if (icon) icon.textContent = '🌤️';
+    if (temp) temp.textContent = `${settings.weatherLocation}: ${displayTemp}`;
+    if (desc) desc.textContent = 'Partly Cloudy';
+    showToast('Weather updated!', 'success');
+  }, 1000);
+}
+
+function updateWeatherWidget(widgetId) {
+  const widget = document.getElementById(widgetId);
+  if (!widget) return;
+  
+  const settings = getSettings();
+  // Simulated weather data (would be real API call in production)
+  const tempC = 18;
+  const displayTemp = settings.weatherUnit === 'F'
+    ? Math.round(tempC * 9/5 + 32) + '°F'
+    : tempC + '°C';
+  
+  const tempEl = widget.querySelector('[data-weather-temp]');
+  const locationEl = widget.querySelector('[data-weather-location]');
+  
+  if (tempEl) tempEl.textContent = `${displayTemp} • Partly Cloudy`;
+  if (locationEl) locationEl.textContent = settings.weatherLocation;
 }
 
 function exportData(format) {
@@ -4991,7 +5364,7 @@ async function processVoiceCommand(transcript) {
 
   // Upload/Add item commands
   if (lower.includes('add') || lower.includes('upload') || lower.includes('new item')) {
-    window.location.href = 'upload.html';
+    window.location.href = 'wardrobe.html';
     return;
   }
 
@@ -5122,5 +5495,94 @@ async function askUserWhichItems(detectedItems) {
       }
     ]);
   });
+}
+
+// ============================================================================
+// GRABBER (WEB SCRAPER)
+// ============================================================================
+
+async function handleScrapeUrl() {
+  const input = document.getElementById('scrape-url-input');
+  const url = input?.value.trim();
+  
+  if (!url) {
+    showToast('Please enter a valid URL', 'error');
+    return;
+  }
+
+  // Create queue item immediately for feedback
+  const queueId = 'uq-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  const queueItem = {
+    id: queueId,
+    file: { name: url }, // Placeholder name
+    status: 'analyzing', 
+    statusText: 'Scraping...',
+    thumb: null, // No thumb yet
+    error: null,
+  };
+  uploadQueue.push(queueItem);
+  renderUploadQueuePanel();
+  
+  try {
+    // Use the async job system for scraping
+    const result = await submitAIJob('scrape', { url }, 'Scraping product info', {
+        onProgress: (status) => {
+            updateQueueItemStatus(queueId, 'analyzing', status);
+        }
+    });
+    
+    // Result contains image_url (S3 or local)
+    let blob;
+    try {
+        updateQueueItemStatus(queueId, 'downloading', 'Downloading image...');
+        const imgResp = await fetch(result.image_url);
+        blob = await imgResp.blob();
+    } catch (e) {
+        throw new Error('Could not download image from ' + result.image_url);
+    }
+    
+    // Update queue item with real file and data
+    queueItem.file = new File([blob], "scraped_item.jpg", { type: blob.type });
+    queueItem.scrapedData = result;
+    
+    // Update thumb and trigger processing
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      queueItem.thumb = e.target.result;
+      updateQueueItemStatus(queueId, 'queued', 'Ready to process');
+      showToast('Image grabbed! Processing...', 'success');
+      processUploadQueue(); // This will save to wardrobe
+    };
+    reader.readAsDataURL(queueItem.file);
+    
+    if (input) input.value = '';
+    
+  } catch (e) {
+    console.error(e);
+    queueItem.error = e;
+    updateQueueItemStatus(queueId, 'failed', 'Scrape failed: ' + e.message);
+    showToast('Grabber failed: ' + e.message, 'error');
+  }
+}
+
+function enqueueScrapedItem(file, metadata) {
+    const queueItem = {
+      id: 'uq-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      file,
+      status: 'queued',
+      statusText: 'Queued',
+      thumb: null,
+      error: null,
+      scrapedData: metadata
+    };
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      queueItem.thumb = e.target.result;
+      uploadQueue.push(queueItem);
+      renderUploadQueuePanel();
+      processUploadQueue();
+    };
+    reader.readAsDataURL(file);
 }
 

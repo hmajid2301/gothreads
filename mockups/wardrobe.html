@@ -15,6 +15,7 @@
         <a href="wardrobe.html" class="active">Wardrobe</a>
         <a href="outfits.html">Outfits</a>
         <a href="calendar.html">Calendar</a>
+        <a href="analytics.html">Analytics</a>
         <a href="settings.html">Settings</a>
       </nav>
     </div>
@@ -25,9 +26,33 @@
       <div class="toolbar">
         <h1>My Wardrobe</h1>
         <div class="toolbar-actions">
-          <a href="upload.html" class="btn btn-primary">+ Add Item</a>
+          <button id="toggle-upload-btn" class="btn btn-primary" onclick="toggleUploadArea()">+ Add Item</button>
         </div>
       </div>
+
+      <!-- Upload Section (Collapsible) -->
+      <div id="upload-section" style="display: none; margin-bottom: 1.5rem;">
+        <div class="card upload-area" onclick="document.getElementById('upload-input').click()">
+          <div style="text-align: center; padding: 2rem; border: 2px dashed var(--border); border-radius: 0.5rem; background: var(--bg-neutral);">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">☁️</div>
+            <p style="margin: 0; color: var(--text-neutral); font-weight: 500;">Drag & drop images here or click to upload</p>
+            <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-neutral);">Supports JPG, PNG, WEBP</p>
+          </div>
+        </div>
+        
+        <div class="card" style="margin-top: 1rem; background: #f8f9fa;">
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <span style="font-weight: 600; white-space: nowrap;">🌐 Import from URL:</span>
+            <input type="text" id="scrape-url-input" placeholder="Paste product URL (Uniqlo, Zara, SSENSE...)" style="flex: 1; padding: 0.6rem; border: 1px solid var(--border); border-radius: 0.35rem; min-width: 200px;">
+            <button class="btn btn-primary" onclick="handleScrapeUrl()" style="padding: 0.6rem 1.2rem;">Grab</button>
+          </div>
+        </div>
+
+        <div id="upload-queue-panel" style="margin-top: 1rem;"></div>
+      </div>
+
+      <!-- Hidden file input -->
+      <input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp" multiple style="display: none;">
 
       <!-- Search and Filters -->
       <div class="card" style="margin-bottom: 1.5rem;">
@@ -129,6 +154,7 @@
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       checkAIStatus();
+      initUpload();
       initWardrobeFilter();
       renderWardrobe('wardrobe-grid');
       initAIStylist();

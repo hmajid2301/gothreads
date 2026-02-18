@@ -131,8 +131,8 @@ tasks:
   "db:reset":
     desc: Reset database (drop, create, migrate, seed)
     cmds:
-      - dropdb --if-exists -h localhost -p 15432 -U postgres gothreads || true
-      - createdb -h localhost -p 15432 -U postgres gothreads
+      - dropdb --if-exists -h localhost -p 15433 -U postgres gothreads || true
+      - createdb -h localhost -p 15433 -U postgres gothreads
       - task: db:migrate
       - task: db:seed
 
@@ -235,10 +235,9 @@ tasks:
     desc: Start required services for mockups (postgres, rembg, ollama)
     cmds:
       - docker compose up -d
-      - ollama serve &>/dev/null &
       - echo "⏳ Waiting for services to be ready..."
       - sleep 5
-      - echo "✅ Services started (ollama serve running in background)"
+      - echo "✅ Services started"
 
   "ollama:pull":
     desc: Pull all required Ollama models (local + cloud)

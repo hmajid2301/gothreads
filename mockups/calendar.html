@@ -110,6 +110,7 @@
         <a href="wardrobe.html">Wardrobe</a>
         <a href="outfits.html">Outfits</a>
         <a href="calendar.html" class="active">Calendar</a>
+        <a href="analytics.html">Analytics</a>
         <a href="settings.html">Settings</a>
       </nav>
     </div>
@@ -117,6 +118,20 @@
 
   <main>
     <div class="container">
+      <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h1>Outfit Calendar</h1>
+        <div class="toolbar-actions" style="display: flex; gap: 1rem; align-items: center;">
+           <div id="weather-widget" style="display: flex; align-items: center; gap: 0.5rem; background: var(--bg-card); padding: 0.5rem 1rem; border-radius: 2rem; border: 1px solid var(--border);">
+              <span style="font-size: 1.5rem;">🌤️</span>
+              <div>
+                <div style="font-weight: 600; font-size: 0.9rem;" data-weather-location>London</div>
+                <div style="font-size: 0.8rem; color: var(--text-neutral);" data-weather-temp>18°C • Partly Cloudy</div>
+              </div>
+           </div>
+          <button id="ai-calendar-suggest-btn" class="btn btn-primary">✨ AI Suggestions</button>
+        </div>
+      </div>
+
       <div class="card">
         <div class="month-nav">
           <button onclick="changeMonth(-1)">←</button>
@@ -160,7 +175,7 @@
         <h3>Quick Actions</h3>
         <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
           <a href="outfit-builder.html" class="btn btn-primary">+ Plan Tomorrow's Outfit</a>
-          <button class="btn btn-secondary" onclick="showToast('Synced with weather!')">🌤️ Refresh Weather</button>
+          <button class="btn btn-secondary" onclick="updateWeatherWidget('weather-widget'); showToast('Weather refreshed!')">🌤️ Refresh Weather</button>
           <button class="btn btn-secondary" onclick="showToast('Calendar exported!')">📅 Export to Calendar</button>
         </div>
       </div>
@@ -177,6 +192,7 @@
     // Initialize calendar when page loads
     document.addEventListener('DOMContentLoaded', () => {
       checkAIStatus();
+      updateWeatherWidget('weather-widget');
       initCalendar();
     });
   </script>

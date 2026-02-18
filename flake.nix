@@ -173,7 +173,7 @@
             export GOTHREADS_WEBSERVER_PORT=8080
 
             # Database configuration
-            export GOTHREADS_DB_DATABASE_URL="postgres://postgres:postgres@localhost:15432/gothreads?sslmode=disable"
+            export GOTHREADS_DB_DATABASE_URL="postgres://postgres:postgres@localhost:15433/gothreads?sslmode=disable"
 
             # OAuth configuration (mock-oauth2-server)
             export GOTHREADS_OAUTH_SKIP_AUTH=true
@@ -198,6 +198,9 @@
             export GOTHREADS_OLLAMA_URL=http://localhost:11434
             export GOTHREADS_OLLAMA_VISION_MODEL=llava:7b
             export GOTHREADS_OLLAMA_TEXT_MODEL=llama3.2:3b
+
+            # VTON service URLs
+            export GOTHREADS_LADIVTON_SHOES_URL=http://localhost:8558
 
             # Only show welcome message once per shell session
             if [ -z "$GOTHREADS_SHELL_INITIALIZED" ]; then

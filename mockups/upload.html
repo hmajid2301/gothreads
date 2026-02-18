@@ -2,95 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Upload Item - go-threads</title>
-  <link rel="stylesheet" href="css/style.css">
+  <meta http-equiv="refresh" content="0; url=wardrobe.html">
+  <title>Redirecting...</title>
 </head>
 <body>
-  <header>
-    <div class="container header-content">
-      <a href="index.html" class="logo">🧵 go-threads</a>
-      <nav>
-        <a href="index.html">Home</a>
-        <a href="wardrobe.html">Wardrobe</a>
-        <a href="outfits.html">Outfits</a>
-        <a href="calendar.html">Calendar</a>
-        <a href="settings.html">Settings</a>
-      </nav>
-    </div>
-  </header>
-
-  <main>
-    <div class="container">
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-          <h1>Upload New Item</h1>
-          <div style="display: flex; gap: 1rem; align-items: center;">
-            <button id="clear-db-btn" class="btn" style="background: #E74C3C; color: white; padding: 0.5rem 1rem; font-size: 0.875rem;">
-              🗑️ Clear All Data
-            </button>
-            <div id="ai-status" style="font-size: 0.875rem;">
-              <span style="color: #95a5a6;">○ Checking AI...</span>
-            </div>
-          </div>
-        </div>
-        <p>Add a new clothing item to your wardrobe. Take a photo or choose from your library.</p>
-
-        <div class="upload-area" onclick="document.getElementById('upload-input').click()">
-          <div class="upload-icon">📸</div>
-          <h3>Click to upload or drag and drop</h3>
-          <p>JPEG, PNG, or WebP (max 10MB each) - Select multiple files</p>
-          <input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp" multiple>
-        </div>
-
-        <div style="margin-top: 2rem; text-align: center;">
-          <p style="color: var(--text-neutral);">
-            Background will be automatically removed. AI will detect clothing type, color, and brand. You can edit details after upload.
-          </p>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>Tips for Great Photos</h2>
-        <ul style="line-height: 2;">
-          <li>📷 Use good lighting - natural light works best</li>
-          <li>🎨 Background will be automatically removed</li>
-          <li>👔 Lay item flat or hang it</li>
-          <li>📏 Capture the full item in frame</li>
-          <li>🏷️ Make sure brand labels are visible and clear</li>
-        </ul>
-      </div>
-
-      <div class="card" style="background: var(--warm-bg); border: 1px dashed var(--primary);">
-        <h3>AI Features (PoC)</h3>
-        <p style="margin-bottom: 1rem; color: var(--text-neutral);">
-          To enable AI-powered clothing analysis:
-        </p>
-        <pre style="background: #1a1a2e; color: #eee; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.875rem;">
-# Start all services (Ollama + rembg background removal)
-docker compose up -d
-
-# Pull AI models (first time only)
-ollama pull llava:7b        # Fast model (default)
-ollama pull llava:13b       # Enhanced brand detection (optional)
-
-# Start the mockup server (serves files + AI API)
-task mockups:dev
-
-# Or manually:
-cd mockups/api && go run main.go</pre>
-        <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-neutral);">
-          Server runs on <code>http://localhost:8556</code>. Background removal happens automatically on upload. Use "✨ Detect with AI (13b)" button on item detail page for enhanced brand detection (2-3 min per image).
-        </p>
-      </div>
-    </div>
-  </main>
-
-  <div id="toast" class="toast"></div>
-
-  <!-- Floating Voice Button -->
-  <button class="voice-input-btn floating-voice-btn" onclick="startVoiceInput()" title="Voice commands">🎤</button>
-
-  <script src="js/app.js"></script>
+  <p>Redirecting to <a href="wardrobe.html">wardrobe</a>...</p>
 </body>
 </html>

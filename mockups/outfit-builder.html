@@ -15,6 +15,7 @@
         <a href="wardrobe.html">Wardrobe</a>
         <a href="outfits.html">Outfits</a>
         <a href="calendar.html">Calendar</a>
+        <a href="analytics.html">Analytics</a>
         <a href="settings.html">Settings</a>
       </nav>
     </div>
@@ -25,7 +26,16 @@
       <div class="toolbar">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
           <div>
-            <h1 style="margin: 0;">Create Outfit</h1>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <h1 style="margin: 0;">Create Outfit</h1>
+              <div id="weather-widget" style="display: flex; align-items: center; gap: 0.5rem; background: var(--bg-card); padding: 0.25rem 0.75rem; border-radius: 2rem; border: 1px solid var(--border);">
+                <span style="font-size: 1.25rem;">🌤️</span>
+                <div>
+                  <div style="font-weight: 600; font-size: 0.75rem;" data-weather-location>London</div>
+                  <div style="font-size: 0.7rem; color: var(--text-neutral);" data-weather-temp>18°C • Partly Cloudy</div>
+                </div>
+              </div>
+            </div>
             <p style="color: var(--text-neutral); font-size: 0.875rem; margin: 0.25rem 0 0 0;">
               Click "✨ Dress with AI" to generate outfit for today's weather in London, or select items manually
             </p>
@@ -166,6 +176,7 @@
     // Initialize chat widget when page loads
     document.addEventListener('DOMContentLoaded', () => {
       checkAIStatus();
+      updateWeatherWidget('weather-widget');
       initChat();
 
       // Auto-trigger AI if coming from outfits page

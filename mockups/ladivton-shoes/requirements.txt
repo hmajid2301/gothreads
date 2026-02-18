@@ -1,0 +1,12 @@
+fastapi>=0.115.0
+uvicorn[standard]
+diffusers==0.14.0
+transformers==4.27.3
+accelerate==0.18.0
+opencv-python==4.7.0.72
+pillow
+scipy
+scikit-image
+clean-fid==0.1.35
+torchmetrics[image]==0.11.4
+einops

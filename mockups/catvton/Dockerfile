@@ -1,33 +1,53 @@
-FROM python:3.11-slim
-
-RUN apt-get update && apt-get install -y \
-    git libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+FROM rocm/pytorch:latest
 
 WORKDIR /app
 
-# Install CPU-only PyTorch (smaller image, no CUDA needed)
-RUN pip install --no-cache-dir \
-    torch==2.1.2 torchvision==0.16.2 \
-    --index-url https://download.pytorch.org/whl/cpu
+# System dependencies for CatVTON + DensePose + SCHP
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git libglib2.0-0 libgl1 libsm6 libxext6 libxrender1 libgomp1 \
+    build-essential python3-dev ninja-build \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Ensure setuptools is new enough (provides distutils shim for Python 3.12)
+RUN pip install --upgrade setuptools wheel
+
+# Install detectron2 from official source — compiles _C extension for Python 3.12.
+# CatVTON bundles detectron2 with _C.cpython-39 .so which only works on Python 3.9.
+# --no-build-isolation so it finds the pre-installed torch from the base image.
+RUN pip install --no-build-isolation \
+    'git+https://github.com/facebookresearch/detectron2.git'
 
 # Clone CatVTON repo
 RUN git clone https://github.com/Zheng-Chong/CatVTON.git /app/catvton
 
-COPY app.py .
-COPY create_nsfw_placeholder.py .
+WORKDIR /app/catvton
 
-# Create NSFW placeholder image (required by CatVTON safety checker)
-RUN mkdir -p /app/catvton/resource/img && \
-    python3 create_nsfw_placeholder.py
+# Remove CatVTON's bundled detectron2 (has cpython-39 .so, incompatible with Python 3.12).
+# The densepose/ directory is pure Python and stays — it imports from the system detectron2.
+RUN rm -rf detectron2
 
-# Model weights are downloaded on first request and cached in the
-# huggingface-cache Docker volume mounted at /root/.cache/huggingface.
-# First try-on will be slower (~5-10 min for download + inference).
+# Install CatVTON requirements, skipping packages already in the base image
+# to avoid version conflicts (torch, torchvision, setuptools).
+# Also remove accelerate pin — latest diffusers from git HEAD needs newer accelerate
+# that has clear_device_cache.
+RUN sed -i '/^torch==/d' requirements.txt && \
+    sed -i '/^torchvision==/d' requirements.txt && \
+    sed -i '/^setuptools==/d' requirements.txt && \
+    sed -i '/^accelerate==/d' requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
 
-EXPOSE 8557
+# Fix gradio_client bug: get_type() crashes when schema is a bool instead of dict.
+# This happens with gradio_client==1.3.0 + latest diffusers JSON schemas.
+COPY patch_gradio_client.py /tmp/
+RUN python /tmp/patch_gradio_client.py
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8557", "--timeout-keep-alive", "600"]
+# Create NSFW placeholder (required by safety checker)
+COPY create_nsfw_placeholder.py /app/
+RUN mkdir -p resource/img && python3 /app/create_nsfw_placeholder.py
+
+# Model weights download on first request (cached in /root/.cache/huggingface volume)
+
+EXPOSE 7860
+
+# Run Gradio app
+CMD ["python", "app.py"]

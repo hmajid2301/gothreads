@@ -1,0 +1,63 @@
+# GoThreads Configuration
+# Environment variables override these settings (e.g., OLLAMA_URL, REMBG_URL)
+
+server:
+  port: 8556
+  host: "0.0.0.0"
+
+ai:
+  # Primary AI Provider: "local" or "cloud"
+  provider: local
+  
+  # Ollama (Local) Settings
+  ollama:
+    url: "http://localhost:11434"
+    vision_model: "llava:34b"
+    text_model: "llama3.2:3b"
+    spatial_model: "qwen3-vl:32b"
+  
+  # Cloud AI Settings (when provider: cloud)
+  cloud:
+    # OpenAI
+    openai_api_key: ""
+    openai_model: "gpt-4-vision-preview"
+    
+    # Anthropic
+    anthropic_api_key: ""
+    anthropic_model: "claude-3-opus-20240229"
+
+image_processing:
+  # Background Removal Service
+  rembg_url: "http://localhost:5000"
+  auto_remove_bg: true
+  
+  # Virtual Try-On
+  vton_backend: "fashn"  # "fashn", "catvton-local", "disabled"
+  catvton_url: "http://localhost:7860"
+  ladivton_shoes_url: "http://localhost:8558"
+
+storage:
+  # S3-Compatible Storage
+  s3:
+    enabled: true
+    endpoint: "http://localhost:8333"
+    bucket: "gothreads"
+    access_key: "admin"
+    secret_key: "admin123"
+    region: "us-east-1"
+
+scraper:
+  # Web Scraper Settings
+  user_agent: "Mozilla/5.0 (compatible; GoThreads/1.0)"
+  timeout_seconds: 30
+  ai_image_selection: true  # Use AI to pick best product image
+  auto_remove_bg: true      # Remove background from scraped images
+  
+weather:
+  location: "London"
+  unit: "celsius"  # "celsius" or "fahrenheit"
+  
+# Logging
+logging:
+  level: "info"  # "debug", "info", "warn", "error"
+  format: "text" # "text" or "json"

@@ -82,3 +82,6 @@ logs/
 
 # CatVTON (cloned during Docker build, not committed)
 mockups/catvton/CatVTON/
+
+# Generated images
+mockups/images/generated/

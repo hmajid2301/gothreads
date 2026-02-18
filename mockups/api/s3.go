@@ -96,31 +96,43 @@ func handleS3Upload(w http.ResponseWriter, r *http.Request) {
 	// Generate unique filename
 	filename := fmt.Sprintf("items/%d.png", time.Now().UnixNano())
 
-	log.Printf("Uploading image to S3: %s (%d bytes)", filename, len(imgBytes))
-
 	// Upload to S3
-	_, err = s3Client.PutObject(&s3.PutObjectInput{
-		Bucket:        aws.String(bucketName),
-		Key:           aws.String(filename),
-		Body:          bytes.NewReader(imgBytes),
-		ContentType:   aws.String(contentType),
-		ContentLength: aws.Int64(int64(len(imgBytes))),
-		ACL:           aws.String("public-read"),
-	})
-
+	publicURL, err := uploadBytesToS3(filename, imgBytes, contentType)
 	if err != nil {
 		log.Printf("ERROR: Failed to upload to S3: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to upload image: "+err.Error())
 		return
 	}
 
-	// Return public URL
-	publicURL := publicURLPrefix + filename
-
-	log.Printf("Image uploaded successfully: %s", publicURL)
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(UploadImageResponse{
 		URL: publicURL,
 	})
+}
+
+func uploadBytesToS3(filename string, data []byte, contentType string) (string, error) {
+	log.Printf("Uploading image to S3: %s (%d bytes)", filename, len(data))
+
+	_, err := s3Client.PutObject(&s3.PutObjectInput{
+		Bucket:        aws.String(bucketName),
+		Key:           aws.String(filename),
+		Body:          bytes.NewReader(data),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(int64(len(data))),
+		ACL:           aws.String("public-read"),
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to put object: %w", err)
+	}
+
+	// Return public URL
+	publicURL := fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(s3Endpoint, "/"), bucketName, filename)
+	// Localstack specific quirk: use path style access for public URL
+	if strings.Contains(s3Endpoint, "localhost") {
+		publicURL = fmt.Sprintf("%s/%s/%s", s3Endpoint, bucketName, filename)
+	}
+
+	log.Printf("Image uploaded successfully: %s", publicURL)
+	return publicURL, nil
 }

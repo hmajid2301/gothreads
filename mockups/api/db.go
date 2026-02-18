@@ -16,7 +16,7 @@ var dbPool *pgxpool.Pool
 
 func initDB() error {
 	var err error
-	connString := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:15432/gothreads?sslmode=disable")
+	connString := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:15433/gothreads?sslmode=disable")
 
 	dbPool, err = pgxpool.New(context.Background(), connString)
 	if err != nil {
@@ -29,6 +29,28 @@ func initDB() error {
 	}
 
 	log.Println("📊 Database connected:", connString)
+
+	// Ensure default user exists (mockup uses hardcoded user_id=1)
+	_, err = dbPool.Exec(context.Background(),
+		`INSERT INTO users (id, email, name) VALUES (1, 'local@gothreads.dev', 'Local User') ON CONFLICT (id) DO NOTHING`)
+	if err != nil {
+		log.Printf("⚠️  Could not ensure default user: %v", err)
+	}
+
+	// Ensure max_wears column exists
+	_, err = dbPool.Exec(context.Background(),
+		`ALTER TABLE items ADD COLUMN IF NOT EXISTS max_wears INT DEFAULT 5`)
+	if err != nil {
+		log.Printf("⚠️  Could not add max_wears column: %v", err)
+	}
+
+	// Ensure ratings column exists (for 3-tier rating system)
+	_, err = dbPool.Exec(context.Background(),
+		`ALTER TABLE outfits ADD COLUMN IF NOT EXISTS ratings JSONB`)
+	if err != nil {
+		log.Printf("⚠️  Could not add ratings column: %v", err)
+	}
+
 	return nil
 }
 
@@ -37,7 +59,7 @@ func handleListItems(w http.ResponseWriter, r *http.Request) {
 	userID := int64(1) // TODO: Get from auth
 
 	rows, err := dbPool.Query(context.Background(),
-		"SELECT id, name, description, category, price, brand, color, image_url, wear_count, ai_analysis, tags FROM items WHERE user_id = $1 ORDER BY created_at DESC",
+		"SELECT id, name, description, category, price, brand, color, image_url, wear_count, max_wears, ai_analysis, tags FROM items WHERE user_id = $1 ORDER BY created_at DESC",
 		userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Database error: "+err.Error())
@@ -51,10 +73,10 @@ func handleListItems(w http.ResponseWriter, r *http.Request) {
 		var name, category, imageURL string
 		var price float64
 		var description, brand, color, aiAnalysis *string
-		var wearCount int32
+		var wearCount, maxWears int32
 		var tags []string
 
-		if err := rows.Scan(&id, &name, &description, &category, &price, &brand, &color, &imageURL, &wearCount, &aiAnalysis, &tags); err != nil {
+		if err := rows.Scan(&id, &name, &description, &category, &price, &brand, &color, &imageURL, &wearCount, &maxWears, &aiAnalysis, &tags); err != nil {
 			log.Printf("Error scanning row: %v", err)
 			continue
 		}
@@ -66,6 +88,7 @@ func handleListItems(w http.ResponseWriter, r *http.Request) {
 			"price":      price,
 			"image_url":  imageURL,
 			"wear_count": wearCount,
+			"max_wears":  maxWears,
 		}
 
 		if description != nil {
@@ -105,13 +128,13 @@ func handleGetItem(w http.ResponseWriter, r *http.Request) {
 	var name, category, imageURL string
 	var price float64
 	var description, brand, color, aiAnalysis, season, notes *string
-	var wearCount int32
+	var wearCount, maxWears int32
 	var tags []string
 
 	err = dbPool.QueryRow(context.Background(),
-		`SELECT id, name, description, category, price, brand, color, season, image_url, notes, wear_count, ai_analysis, tags
+		`SELECT id, name, description, category, price, brand, color, season, image_url, notes, wear_count, max_wears, ai_analysis, tags
 		 FROM items WHERE id = $1 AND user_id = $2`,
-		itemID, userID).Scan(&id, &name, &description, &category, &price, &brand, &color, &season, &imageURL, &notes, &wearCount, &aiAnalysis, &tags)
+		itemID, userID).Scan(&id, &name, &description, &category, &price, &brand, &color, &season, &imageURL, &notes, &wearCount, &maxWears, &aiAnalysis, &tags)
 
 	if err != nil {
 		log.Printf("Error getting item %d: %v", itemID, err)
@@ -126,6 +149,7 @@ func handleGetItem(w http.ResponseWriter, r *http.Request) {
 		"price":      price,
 		"image_url":  imageURL,
 		"wear_count": wearCount,
+		"max_wears":  maxWears,
 	}
 
 	if description != nil {
@@ -170,6 +194,7 @@ func handleCreateItem(w http.ResponseWriter, r *http.Request) {
 		Notes       string   `json:"notes"`
 		AIAnalysis  string   `json:"ai_analysis"`
 		Tags        []string `json:"tags"`
+		MaxWears    int      `json:"max_wears"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -177,13 +202,31 @@ func handleCreateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	maxWears := req.MaxWears
+	if maxWears == 0 {
+		switch req.Category {
+		case "Tops":
+			maxWears = 2
+		case "Bottoms":
+			maxWears = 5
+		case "Outerwear":
+			maxWears = 10
+		case "Shoes":
+			maxWears = 50
+		case "Dresses", "One-Pieces":
+			maxWears = 2
+		default:
+			maxWears = 5
+		}
+	}
+
 	var itemID int64
 	err := dbPool.QueryRow(context.Background(),
-		`INSERT INTO items (user_id, name, description, category, price, brand, color, season, image_url, notes, ai_analysis, tags)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		`INSERT INTO items (user_id, name, description, category, price, brand, color, season, image_url, notes, ai_analysis, tags, max_wears)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		 RETURNING id`,
 		userID, req.Name, nullString(req.Description), req.Category, req.Price, nullString(req.Brand), nullString(req.Color),
-		nullString(req.Season), req.ImageURL, nullString(req.Notes), nullString(req.AIAnalysis), req.Tags).Scan(&itemID)
+		nullString(req.Season), req.ImageURL, nullString(req.Notes), nullString(req.AIAnalysis), req.Tags, maxWears).Scan(&itemID)
 
 	if err != nil {
 		log.Printf("Error creating item: %v", err)
@@ -219,6 +262,7 @@ func handleUpdateItem(w http.ResponseWriter, r *http.Request) {
 		Notes       string   `json:"notes"`
 		AIAnalysis  string   `json:"ai_analysis"`
 		Tags        []string `json:"tags"`
+		MaxWears    *int     `json:"max_wears"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -228,10 +272,10 @@ func handleUpdateItem(w http.ResponseWriter, r *http.Request) {
 
 	_, err = dbPool.Exec(context.Background(),
 		`UPDATE items SET name = $1, description = $2, category = $3, price = $4, brand = $5, color = $6, season = $7,
-		                  notes = $8, ai_analysis = $9, tags = $10, updated_at = NOW()
-		 WHERE id = $11 AND user_id = $12`,
+		                  notes = $8, ai_analysis = $9, tags = $10, max_wears = COALESCE($11, max_wears), updated_at = NOW()
+		 WHERE id = $12 AND user_id = $13`,
 		req.Name, nullString(req.Description), req.Category, req.Price, nullString(req.Brand), nullString(req.Color),
-		nullString(req.Season), nullString(req.Notes), nullString(req.AIAnalysis), req.Tags, itemID, userID)
+		nullString(req.Season), nullString(req.Notes), nullString(req.AIAnalysis), req.Tags, req.MaxWears, itemID, userID)
 
 	if err != nil {
 		log.Printf("Error updating item: %v", err)
@@ -285,7 +329,7 @@ func handleListOutfits(w http.ResponseWriter, r *http.Request) {
 	userID := int64(1) // TODO: Get from auth
 
 	rows, err := dbPool.Query(context.Background(),
-		`SELECT id, name, notes, wear_count, rating, body_image_url, created_at FROM outfits WHERE user_id = $1 ORDER BY created_at DESC`,
+		`SELECT id, name, notes, wear_count, rating, ratings, body_image_url, created_at FROM outfits WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Database error: "+err.Error())
@@ -300,9 +344,10 @@ func handleListOutfits(w http.ResponseWriter, r *http.Request) {
 		var notes, bodyImageURL *string
 		var wearCount int32
 		var rating *float64
+		var ratings []byte // JSONB raw bytes
 		var createdAt time.Time
 
-		if err := rows.Scan(&id, &name, &notes, &wearCount, &rating, &bodyImageURL, &createdAt); err != nil {
+		if err := rows.Scan(&id, &name, &notes, &wearCount, &rating, &ratings, &bodyImageURL, &createdAt); err != nil {
 			log.Printf("Error scanning outfit row: %v", err)
 			continue
 		}
@@ -318,6 +363,12 @@ func handleListOutfits(w http.ResponseWriter, r *http.Request) {
 		}
 		if rating != nil {
 			outfit["rating"] = *rating
+		}
+		if ratings != nil {
+			var r map[string]interface{}
+			if err := json.Unmarshal(ratings, &r); err == nil {
+				outfit["ratings"] = r
+			}
 		}
 		if bodyImageURL != nil {
 			outfit["body_image_url"] = *bodyImageURL
@@ -372,11 +423,12 @@ func handleGetOutfit(w http.ResponseWriter, r *http.Request) {
 	var notes, bodyImageURL *string
 	var wearCount int32
 	var rating *float64
+	var ratings []byte
 	var createdAt time.Time
 
 	err = dbPool.QueryRow(context.Background(),
-		`SELECT id, name, notes, wear_count, rating, body_image_url, created_at FROM outfits WHERE id = $1 AND user_id = $2`,
-		outfitID, userID).Scan(&id, &name, &notes, &wearCount, &rating, &bodyImageURL, &createdAt)
+		`SELECT id, name, notes, wear_count, rating, ratings, body_image_url, created_at FROM outfits WHERE id = $1 AND user_id = $2`,
+		outfitID, userID).Scan(&id, &name, &notes, &wearCount, &rating, &ratings, &bodyImageURL, &createdAt)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "Outfit not found")
 		return
@@ -393,6 +445,12 @@ func handleGetOutfit(w http.ResponseWriter, r *http.Request) {
 	}
 	if rating != nil {
 		outfit["rating"] = *rating
+	}
+	if ratings != nil {
+		var r map[string]interface{}
+		if err := json.Unmarshal(ratings, &r); err == nil {
+			outfit["ratings"] = r
+		}
 	}
 	if bodyImageURL != nil {
 		outfit["body_image_url"] = *bodyImageURL
@@ -430,9 +488,10 @@ func handleCreateOutfit(w http.ResponseWriter, r *http.Request) {
 	userID := int64(1)
 
 	var req struct {
-		Name         string `json:"name"`
-		Notes        string `json:"notes"`
-		BodyImageURL string `json:"body_image_url"`
+		Name         string         `json:"name"`
+		Notes        string         `json:"notes"`
+		BodyImageURL string         `json:"body_image_url"`
+		Ratings      map[string]int `json:"ratings"`
 		Positions    []struct {
 			ID    int64   `json:"id"`
 			X     int     `json:"x"`
@@ -449,10 +508,10 @@ func handleCreateOutfit(w http.ResponseWriter, r *http.Request) {
 
 	var outfitID int64
 	err := dbPool.QueryRow(context.Background(),
-		`INSERT INTO outfits (user_id, name, notes, body_image_url)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO outfits (user_id, name, notes, body_image_url, ratings)
+		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING id`,
-		userID, req.Name, nullString(req.Notes), nullString(req.BodyImageURL)).Scan(&outfitID)
+		userID, req.Name, nullString(req.Notes), nullString(req.BodyImageURL), req.Ratings).Scan(&outfitID)
 	if err != nil {
 		log.Printf("Error creating outfit: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to create outfit")
@@ -493,10 +552,11 @@ func handleUpdateOutfit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name         string `json:"name"`
-		Notes        string `json:"notes"`
-		BodyImageURL string `json:"body_image_url"`
-		Rating       *float64 `json:"rating"`
+		Name         string         `json:"name"`
+		Notes        string         `json:"notes"`
+		BodyImageURL string         `json:"body_image_url"`
+		Rating       *float64       `json:"rating"`
+		Ratings      map[string]int `json:"ratings"`
 		Positions    []struct {
 			ID    int64   `json:"id"`
 			X     int     `json:"x"`
@@ -512,9 +572,9 @@ func handleUpdateOutfit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = dbPool.Exec(context.Background(),
-		`UPDATE outfits SET name = $1, notes = $2, body_image_url = $3, rating = $4, updated_at = NOW()
-		 WHERE id = $5 AND user_id = $6`,
-		req.Name, nullString(req.Notes), nullString(req.BodyImageURL), req.Rating, outfitID, userID)
+		`UPDATE outfits SET name = $1, notes = $2, body_image_url = $3, rating = $4, ratings = $5, updated_at = NOW()
+		 WHERE id = $6 AND user_id = $7`,
+		req.Name, nullString(req.Notes), nullString(req.BodyImageURL), req.Rating, req.Ratings, outfitID, userID)
 	if err != nil {
 		log.Printf("Error updating outfit: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to update outfit")
@@ -637,7 +697,7 @@ func handleUpsertCalendarEvent(w http.ResponseWriter, r *http.Request) {
 	userID := int64(1)
 
 	var req struct {
-		Date      string `json:"date"`       // YYYY-MM-DD
+		Date      string `json:"date"` // YYYY-MM-DD
 		EventName string `json:"event_name"`
 		Weather   string `json:"weather"`
 		Location  string `json:"location"`

@@ -45,31 +45,90 @@
       <div class="card">
         <h2>AI Processing</h2>
         <div class="form-group">
+          <label>AI Provider</label>
+          <select id="setting-ai-provider">
+            <option value="local">Local (Ollama) - Privacy-first</option>
+            <option value="cloud">Cloud (OpenAI/Anthropic)</option>
+          </select>
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem;">
+            Local runs on your machine, Cloud uses external APIs
+          </p>
+        </div>
+
+        <!-- Local AI Settings -->
+        <div id="local-ai-settings" class="form-group">
+          <h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">Ollama Settings (Local)</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+              <label>Ollama URL</label>
+              <input type="text" id="setting-ollama-url" value="http://localhost:11434">
+            </div>
+            <div>
+              <label>Vision Model</label>
+              <input type="text" id="setting-vision-model" value="llava:34b" placeholder="llava:34b">
+            </div>
+            <div>
+              <label>Text Model</label>
+              <input type="text" id="setting-text-model" value="llama3.2:3b" placeholder="llama3.2:3b">
+            </div>
+            <div>
+              <label>Spatial Model</label>
+              <input type="text" id="setting-spatial-model" value="qwen3-vl:32b" placeholder="qwen3-vl:32b">
+            </div>
+          </div>
+        </div>
+
+        <!-- Cloud AI Settings -->
+        <div id="cloud-ai-settings" style="display: none;">
+          <h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">Cloud API Keys</h4>
+          <div class="form-group">
+            <label>OpenAI API Key</label>
+            <input type="password" id="setting-openai-key" placeholder="sk-...">
+          </div>
+          <div class="form-group">
+            <label>Anthropic API Key</label>
+            <input type="password" id="setting-anthropic-key" placeholder="sk-ant-...">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
           <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" id="setting-auto-remove-bg" checked>
             <span>Automatically remove backgrounds</span>
           </label>
-          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
-            Use AI to remove backgrounds from uploaded photos
-          </p>
         </div>
         <div class="form-group">
           <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" id="setting-auto-tag" checked>
             <span>Auto-tag colors and categories</span>
           </label>
-          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem; margin-left: 1.75rem;">
-            AI will suggest colors, categories, and seasons for new items
+        </div>
+
+        <!-- Rembg Settings -->
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Background Removal Service (Rembg)</label>
+          <input type="text" id="setting-rembg-url" value="http://localhost:5000">
+          <p style="font-size: 0.875rem; color: var(--text-neutral); margin-top: 0.25rem;">
+            URL of the rembg service (Docker container)
           </p>
         </div>
-        <div class="form-group">
-          <label>Preferred AI Provider</label>
-          <select id="setting-ai-provider">
-            <option value="local">Local (rembg) - Privacy-first</option>
-            <option value="openai">OpenAI Vision - Higher quality</option>
-            <option value="anthropic">Anthropic Claude - Alternative cloud</option>
+
+        <!-- VTON Settings -->
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Virtual Try-On Backend</label>
+          <select id="setting-vton-backend">
+            <option value="fashn">FASHN (Cloud)</option>
+            <option value="catvton-local">CatVTON (Local)</option>
+            <option value="disabled">Disabled</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>CatVTON Local URL</label>
+          <input type="text" id="setting-catvton-url" value="http://localhost:7860">
+        </div>
+
+        <button class="btn btn-secondary" style="margin-top: 1rem;" onclick="testAIConnection()">🔄 Test AI Connection</button>
+        <span id="ai-test-status" style="margin-left: 0.5rem;"></span>
       </div>
 
       <!-- Notifications -->

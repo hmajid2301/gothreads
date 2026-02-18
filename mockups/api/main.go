@@ -18,6 +18,7 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -561,6 +562,10 @@ func main() {
 
 	// S3 upload endpoint
 	mux.HandleFunc("POST /api/upload", handleS3Upload)
+
+	// Configuration endpoints
+	mux.HandleFunc("GET /api/config", handleGetConfig)
+	mux.HandleFunc("PUT /api/config", handleUpdateConfig)
 
 	// Wrap with CORS middleware
 	handler := corsMiddleware(mux)
@@ -3315,200 +3320,142 @@ func runScrapeJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 
 	job.updateStatus("processing", fmt.Sprintf("Scraping URL: %s", req.URL))
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(req.URL)
+	// Use go-colly for robust scraping
+	scraper := NewCollyScraper()
+	result, err := scraper.Scrape(ctx, req.URL)
 	if err != nil {
-		job.fail("Failed to fetch URL: " + err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		job.fail(fmt.Sprintf("Failed to fetch URL (Status %d)", resp.StatusCode))
+		job.fail("Failed to scrape URL: " + err.Error())
 		return
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		job.fail("Failed to read response body")
-		return
-	}
-
-	htmlContent := string(body)
-
-	// Helper function for regex extraction
-	extractTag := func(property string) string {
-		re := regexp.MustCompile(fmt.Sprintf(`<meta\s+(?:property|name)=["']%s["']\s+content=["']([^"']+)["']`, regexp.QuoteMeta(property)))
-		matches := re.FindStringSubmatch(htmlContent)
-		if len(matches) > 1 {
-			return matches[1]
-		}
-		re = regexp.MustCompile(fmt.Sprintf(`<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']%s["']`, regexp.QuoteMeta(property)))
-		matches = re.FindStringSubmatch(htmlContent)
-		if len(matches) > 1 {
-			return matches[1]
-		}
-		return ""
-	}
-
-	title := extractTag("og:title")
-	if title == "" {
-		re := regexp.MustCompile(`<title>([^<]+)</title>`)
-		matches := re.FindStringSubmatch(htmlContent)
-		if len(matches) > 1 {
-			title = matches[1]
-		}
-	}
-
-	description := extractTag("og:description")
-	siteName := extractTag("og:site_name")
-
+	title := result.Title
+	description := result.Description
+	siteName := result.SiteName
 	var category, color, brand, price string
+	brand = result.Brand
+	price = result.Price
 
-	// AI Extraction from HTML text (if model available)
-	// We'll strip scripts/styles and get visible text to save context window
+	// Convert image URLs to candidate list
+	var candidateImages []string
+	seenImages := make(map[string]bool)
+	for _, imgURL := range result.ImageURLs {
+		if imgURL == "" || seenImages[imgURL] {
+			continue
+		}
+		// Fix relative URLs
+		if strings.HasPrefix(imgURL, "//") {
+			imgURL = "https:" + imgURL
+		} else if strings.HasPrefix(imgURL, "/") {
+			parsedURL, _ := url.Parse(req.URL)
+			if parsedURL != nil {
+				imgURL = fmt.Sprintf("https://%s%s", parsedURL.Hostname(), imgURL)
+			}
+		}
+		seenImages[imgURL] = true
+		candidateImages = append(candidateImages, imgURL)
+	}
+
+	// Limit candidates
+	if len(candidateImages) > 5 {
+		candidateImages = candidateImages[:5]
+	}
+
+	// AI Extraction from page text (if model available and data is incomplete)
 	if isModelAvailable(textModel) || isModelAvailable(cloudTextModel) {
 		job.updateStatus("processing", "AI analyzing page content...")
 
-		// Simple HTML text extraction
-		cleanText := htmlContent
-		// Remove scripts/styles
-		reScript := regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
-		cleanText = reScript.ReplaceAllString(cleanText, "")
-		reStyle := regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
-		cleanText = reStyle.ReplaceAllString(cleanText, "")
-		// Remove HTML tags
-		reTags := regexp.MustCompile(`<[^>]*>`)
-		cleanText = reTags.ReplaceAllString(cleanText, " ")
-		// Collapse whitespace
-		reSpace := regexp.MustCompile(`\s+`)
-		cleanText = reSpace.ReplaceAllString(cleanText, " ")
-		// Limit length
-		if len(cleanText) > 4000 {
-			cleanText = cleanText[:4000]
-		}
+		// Fetch HTML content for text analysis
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(req.URL)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			htmlContent := string(body)
 
-		prompt := fmt.Sprintf(`Analyze this product page text and extract details.
-		
-		Text: "%s"
-		
-		Return ONLY JSON:
-		{
-			"title": "Product Name",
-			"description": "Short description",
-			"category": "Tops/Bottoms/Shoes/Outerwear/Accessories/Dresses",
-			"color": "Main color",
-			"brand": "Brand Name",
-			"price": "Price if found (e.g. $50)"
-		}`, cleanText)
-
-		model := textModel
-		if ollamaCloud {
-			model = cloudTextModel
-		}
-
-		if aiResp, err := callOllama(prompt, nil, model); err == nil {
-			// Parse JSON
-			var extracted struct {
-				Title       string `json:"title"`
-				Description string `json:"description"`
-				Category    string `json:"category"`
-				Color       string `json:"color"`
-				Brand       string `json:"brand"`
-				Price       string `json:"price"`
+			// Simple HTML text extraction
+			cleanText := htmlContent
+			reScript := regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
+			cleanText = reScript.ReplaceAllString(cleanText, "")
+			reStyle := regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
+			cleanText = reStyle.ReplaceAllString(cleanText, "")
+			reTags := regexp.MustCompile(`<[^>]*>`)
+			cleanText = reTags.ReplaceAllString(cleanText, " ")
+			reSpace := regexp.MustCompile(`\s+`)
+			cleanText = reSpace.ReplaceAllString(cleanText, " ")
+			if len(cleanText) > 4000 {
+				cleanText = cleanText[:4000]
 			}
 
-			// Clean response markdown
-			jsonStr := aiResp.Response
-			if idx := strings.Index(jsonStr, "{"); idx != -1 {
-				jsonStr = jsonStr[idx:]
-				if lastIdx := strings.LastIndex(jsonStr, "}"); lastIdx != -1 {
-					jsonStr = jsonStr[:lastIdx+1]
-					if err := json.Unmarshal([]byte(jsonStr), &extracted); err == nil {
-						log.Printf("🤖 AI Extracted: %+v", extracted)
+			prompt := fmt.Sprintf(`Analyze this product page text and extract details.
+			
+			Text: "%s"
+			
+			Return ONLY JSON:
+			{
+				"title": "Product Name",
+				"description": "Short description",
+				"category": "Tops/Bottoms/Shoes/Outerwear/Accessories/Dresses",
+				"color": "Main color",
+				"brand": "Brand Name",
+				"price": "Price if found (e.g. $50)"
+			}`, cleanText)
 
-						// Merge (prefer AI for empty fields, or override if generic)
-						if title == "" || strings.Contains(title, "http") {
-							title = extracted.Title
-						}
-						if description == "" {
-							description = extracted.Description
-						}
-						if siteName == "" {
-							siteName = extracted.Brand
-						}
+			model := textModel
+			if ollamaCloud {
+				model = cloudTextModel
+			}
 
-						// Capture extra fields
-						category = extracted.Category
-						color = extracted.Color
-						brand = extracted.Brand
-						price = extracted.Price
+			if aiResp, err := callOllama(prompt, nil, model); err == nil {
+				var extracted struct {
+					Title       string `json:"title"`
+					Description string `json:"description"`
+					Category    string `json:"category"`
+					Color       string `json:"color"`
+					Brand       string `json:"brand"`
+					Price       string `json:"price"`
+				}
+
+				jsonStr := aiResp.Response
+				if idx := strings.Index(jsonStr, "{"); idx != -1 {
+					jsonStr = jsonStr[idx:]
+					if lastIdx := strings.LastIndex(jsonStr, "}"); lastIdx != -1 {
+						jsonStr = jsonStr[:lastIdx+1]
+						if err := json.Unmarshal([]byte(jsonStr), &extracted); err == nil {
+							log.Printf("🤖 AI Extracted: %+v", extracted)
+
+							if title == "" || strings.Contains(title, "http") {
+								title = extracted.Title
+							}
+							if description == "" {
+								description = extracted.Description
+							}
+							if siteName == "" {
+								siteName = extracted.Brand
+							}
+
+							category = extracted.Category
+							color = extracted.Color
+							if brand == "" {
+								brand = extracted.Brand
+							}
+							if price == "" {
+								price = extracted.Price
+							}
+						}
 					}
 				}
 			}
 		}
 	}
 
-	// Image extraction logic
-	var candidateImages []string
-	seenImages := make(map[string]bool)
-
-	addImage := func(url string) {
-		if url == "" || seenImages[url] {
-			return
-		}
-		if strings.HasPrefix(url, "//") {
-			url = "https:" + url
-		} else if strings.HasPrefix(url, "/") {
-			baseURLParts := strings.Split(req.URL, "/")
-			if len(baseURLParts) > 2 {
-				url = baseURLParts[0] + "//" + baseURLParts[2] + url
-			}
-		}
-		seenImages[url] = true
-		candidateImages = append(candidateImages, url)
-	}
-
-	if ogImg := extractTag("og:image"); ogImg != "" {
-		addImage(ogImg)
-	}
-
-	jsonLdRe := regexp.MustCompile(`<script type="application/ld\+json">([\s\S]*?)</script>`)
-	ldMatches := jsonLdRe.FindAllStringSubmatch(htmlContent, -1)
-	for _, match := range ldMatches {
-		if len(match) > 1 {
-			imgRe := regexp.MustCompile(`"image"\s*:\s*(?:\[\s*)?"([^"]+)"`)
-			imgMatches := imgRe.FindAllStringSubmatch(match[1], -1)
-			for _, im := range imgMatches {
-				if len(im) > 1 {
-					addImage(im[1])
-				}
-			}
-		}
-	}
-
-	imgTagRe := regexp.MustCompile(`<img[^>]+src=["']([^"']+)["']`)
-	imgTagMatches := imgTagRe.FindAllStringSubmatch(htmlContent, -1)
-	for i, match := range imgTagMatches {
-		if i > 5 {
-			break
-		}
-		if len(match) > 1 {
-			addImage(match[1])
-		}
-	}
-
-	if len(candidateImages) > 5 {
-		candidateImages = candidateImages[:5]
-	}
-
 	selectedImageURL := ""
 
-	// AI Selection
+	// AI Selection for best image
 	if len(candidateImages) > 1 && isModelAvailable(visionModel) {
 		job.updateStatus("processing", "AI selecting best product image...")
 		log.Printf("🤖 Asking AI to pick best product image from %d candidates...", len(candidateImages))
 
+		client := &http.Client{Timeout: 30 * time.Second}
 		for i, imgUrl := range candidateImages {
 			if i >= 3 {
 				break
@@ -3555,6 +3502,7 @@ func runScrapeJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 
 	// Download final image
 	job.updateStatus("processing", "Downloading image...")
+	client := &http.Client{Timeout: 30 * time.Second}
 	finalImgResp, err := client.Get(selectedImageURL)
 	if err != nil {
 		job.fail("Failed to download image: " + err.Error())

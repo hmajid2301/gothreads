@@ -213,5 +213,110 @@
           '';
         };
       }
-    ));
+    ))
+    // {
+      # NixOS Module
+      nixosModules.default = { config, lib, pkgs, ... }:
+        with lib;
+        let
+          cfg = config.services.gothreads;
+        in {
+          options.services.gothreads = {
+            enable = mkEnableOption "GoThreads digital wardrobe manager";
+            
+            port = mkOption {
+              type = types.int;
+              default = 8556;
+              description = "Port to listen on";
+            };
+            
+            dataDir = mkOption {
+              type = types.path;
+              default = "/var/lib/gothreads";
+              description = "Data directory for GoThreads";
+            };
+            
+            configFile = mkOption {
+              type = types.nullOr types.path;
+              default = null;
+              description = "Path to config.yaml";
+            };
+            
+            databaseUrl = mkOption {
+              type = types.str;
+              default = "postgres:///gothreads";
+              description = "PostgreSQL connection URL";
+            };
+            
+            aiProvider = mkOption {
+              type = types.enum [ "local" "cloud" ];
+              default = "local";
+              description = "AI provider to use";
+            };
+            
+            ollamaUrl = mkOption {
+              type = types.str;
+              default = "http://localhost:11434";
+              description = "Ollama API URL";
+            };
+            
+            s3Endpoint = mkOption {
+              type = types.str;
+              default = "http://localhost:8333";
+              description = "S3-compatible storage endpoint";
+            };
+            
+            s3Bucket = mkOption {
+              type = types.str;
+              default = "gothreads";
+              description = "S3 bucket name";
+            };
+          };
+          
+          config = mkIf cfg.enable {
+            users.users.gothreads = {
+              isSystemUser = true;
+              group = "gothreads";
+              home = cfg.dataDir;
+              createHome = true;
+            };
+            users.groups.gothreads = {};
+            
+            systemd.services.gothreads = {
+              description = "GoThreads Digital Wardrobe Manager";
+              wantedBy = [ "multi-user.target" ];
+              after = [ "network.target" "postgresql.service" ];
+              wants = [ "postgresql.service" ];
+              
+              environment = {
+                PORT = toString cfg.port;
+                DATABASE_URL = cfg.databaseUrl;
+                AI_PROVIDER = cfg.aiProvider;
+                OLLAMA_URL = cfg.ollamaUrl;
+                S3_ENDPOINT = cfg.s3Endpoint;
+                S3_BUCKET = cfg.s3Bucket;
+              } // optionalAttrs (cfg.configFile != null) {
+                GOTHREADS_CONFIG = cfg.configFile;
+              };
+              
+              serviceConfig = {
+                Type = "simple";
+                User = "gothreads";
+                Group = "gothreads";
+                WorkingDirectory = cfg.dataDir;
+                ExecStart = "${self.packages.${pkgs.system}.default}/bin/gothreads";
+                Restart = "on-failure";
+                RestartSec = "5s";
+                NoNewPrivileges = true;
+                ProtectSystem = "strict";
+                ProtectHome = true;
+                PrivateTmp = true;
+                ReadWritePaths = [ cfg.dataDir ];
+              };
+            };
+            
+            networking.firewall.allowedTCPPorts = [ cfg.port ];
+          };
+        };
+    };
 }

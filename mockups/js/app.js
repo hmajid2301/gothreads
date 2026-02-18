@@ -4116,10 +4116,19 @@ function initSettings() {
   if (locationInput) locationInput.value = settings.weatherLocation;
   if (tempUnitSelect) tempUnitSelect.value = settings.weatherUnit;
 
+  // Load backend config for AI settings
+  loadBackendConfig();
+
+  // Toggle AI provider settings visibility
+  if (aiProviderSelect) {
+    aiProviderSelect.addEventListener('change', toggleAIProviderSettings);
+    toggleAIProviderSettings();
+  }
+
   // Setup save button
   const saveBtn = document.getElementById('save-settings-btn');
   if (saveBtn) {
-    saveBtn.onclick = saveSettings;
+    saveBtn.onclick = saveAllSettings;
   }
 
   // Setup export buttons
@@ -4170,6 +4179,126 @@ function saveSettings() {
 
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   showToast('Settings saved!', 'success');
+}
+
+async function loadBackendConfig() {
+  try {
+    const resp = await fetch('http://localhost:8556/api/config');
+    if (resp.ok) {
+      const config = await resp.json();
+      
+      // Populate AI settings
+      const ollamaUrl = document.getElementById('setting-ollama-url');
+      const visionModel = document.getElementById('setting-vision-model');
+      const textModel = document.getElementById('setting-text-model');
+      const spatialModel = document.getElementById('setting-spatial-model');
+      const openaiKey = document.getElementById('setting-openai-key');
+      const anthropicKey = document.getElementById('setting-anthropic-key');
+      const rembgUrl = document.getElementById('setting-rembg-url');
+      const vtonBackend = document.getElementById('setting-vton-backend');
+      const catvtonUrl = document.getElementById('setting-catvton-url');
+      
+      if (ollamaUrl) ollamaUrl.value = config.ai?.ollama?.url || '';
+      if (visionModel) visionModel.value = config.ai?.ollama?.visionModel || '';
+      if (textModel) textModel.value = config.ai?.ollama?.textModel || '';
+      if (spatialModel) spatialModel.value = config.ai?.ollama?.spatialModel || '';
+      if (openaiKey) openaiKey.value = config.ai?.cloud?.openaiApiKey || '';
+      if (anthropicKey) anthropicKey.value = config.ai?.cloud?.anthropicApiKey || '';
+      if (rembgUrl) rembgUrl.value = config.imageProcessing?.rembgUrl || '';
+      if (vtonBackend) vtonBackend.value = config.imageProcessing?.vtonBackend || 'fashn';
+      if (catvtonUrl) catvtonUrl.value = config.imageProcessing?.catvtonUrl || '';
+      
+      console.log('Backend config loaded:', config);
+    }
+  } catch (e) {
+    console.warn('Failed to load backend config:', e);
+  }
+}
+
+function toggleAIProviderSettings() {
+  const provider = document.getElementById('setting-ai-provider')?.value;
+  const localSettings = document.getElementById('local-ai-settings');
+  const cloudSettings = document.getElementById('cloud-ai-settings');
+  
+  if (localSettings) localSettings.style.display = provider === 'local' ? 'block' : 'none';
+  if (cloudSettings) cloudSettings.style.display = provider === 'cloud' ? 'block' : 'none';
+}
+
+async function saveAllSettings() {
+  // Save local settings
+  saveSettings();
+  
+  // Save backend config
+  const config = {
+    ai: {
+      provider: document.getElementById('setting-ai-provider')?.value || 'local',
+      ollama: {
+        url: document.getElementById('setting-ollama-url')?.value || '',
+        visionModel: document.getElementById('setting-vision-model')?.value || '',
+        textModel: document.getElementById('setting-text-model')?.value || '',
+        spatialModel: document.getElementById('setting-spatial-model')?.value || ''
+      },
+      cloud: {
+        openaiApiKey: document.getElementById('setting-openai-key')?.value || '',
+        anthropicApiKey: document.getElementById('setting-anthropic-key')?.value || ''
+      }
+    },
+    imageProcessing: {
+      rembgUrl: document.getElementById('setting-rembg-url')?.value || '',
+      autoRemoveBg: document.getElementById('setting-auto-remove-bg')?.checked ?? true,
+      vtonBackend: document.getElementById('setting-vton-backend')?.value || 'fashn',
+      catvtonUrl: document.getElementById('setting-catvton-url')?.value || ''
+    },
+    weather: {
+      location: document.getElementById('setting-location')?.value || 'London',
+      unit: document.getElementById('setting-temp-unit')?.value === 'F' ? 'fahrenheit' : 'celsius'
+    }
+  };
+  
+  try {
+    const resp = await fetch('http://localhost:8556/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+    
+    if (resp.ok) {
+      showToast('All settings saved!', 'success');
+    } else {
+      showToast('Failed to save backend config', 'error');
+    }
+  } catch (e) {
+    console.error('Failed to save backend config:', e);
+    showToast('Error saving config', 'error');
+  }
+}
+
+async function testAIConnection() {
+  const status = document.getElementById('ai-test-status');
+  if (status) status.textContent = 'Testing...';
+  
+  try {
+    const resp = await fetch('http://localhost:8556/api/status');
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.ready) {
+        if (status) {
+          status.innerHTML = '<span style="color: #27AE60;">✓ Connected</span>';
+        }
+        showToast('AI connection successful!', 'success');
+      } else {
+        if (status) {
+          status.innerHTML = '<span style="color: #F39C12;">⚠ Limited</span>';
+        }
+        showToast('AI partially available', 'info');
+      }
+    }
+  } catch (e) {
+    if (status) {
+      status.innerHTML = '<span style="color: #E74C3C;">✗ Failed</span>';
+    }
+    showToast('AI connection failed', 'error');
+  }
 }
 
 function testWeatherSettings() {

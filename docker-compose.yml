@@ -1,112 +1,104 @@
 services:
-  postgres:
-    image: postgres:18
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: gothreads
+  gothreads:
+    image: gothreads/gothreads:latest
+    build: ./mockups/api
     ports:
-      - "15433:5432"
+      - "8556:8556"
+    environment:
+      PORT: 8556
+      DATABASE_URL: postgres://gothreads:gothreads@postgres:5432/gothreads?sslmode=disable
+      GOTHREADS_CONFIG: /config/config.yaml
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      SKIP_AUTH: ${SKIP_AUTH:-false}
     volumes:
-      - postgres-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-
-  migrate:
-    image: gomicro/goose:3.25.0
+      - gothreads_data:/var/lib/gothreads
+      - ./config.yaml:/config/config.yaml:ro
     depends_on:
       postgres:
         condition: service_healthy
-    command: [
-      "goose", "-dir", "/migrations", "postgres",
-      "host=postgres port=5432 user=postgres password=postgres dbname=gothreads sslmode=disable",
-      "up"
-    ]
-    volumes:
-      - ./backend/store/db/migrations:/migrations:ro
-    restart: "no"
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8556/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
 
-  seaweedfs:
-    image: chrislusf/seaweedfs:latest
-    command: server -s3 -dir=/data
-    ports:
-      - "8333:8333"
-      - "9333:9333"
-      - "19333:19333"
-    volumes:
-      - seaweedfs-data:/data
+  postgres:
+    image: postgres:16-alpine
     environment:
-      WEED_S3_ACCESS_KEY: admin
-      WEED_S3_SECRET_KEY: admin123
+      POSTGRES_USER: gothreads
+      POSTGRES_PASSWORD: gothreads
+      POSTGRES_DB: gothreads
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gothreads"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
-  # mock-oauth2:
-  #   image: ghcr.io/navikt/mock-oauth2-server:2.1.10
-  #   ports:
-  #     - "8090:8090"
-  #   environment:
-  #     SERVER_PORT: 8090
-  #     JSON_CONFIG: |
-  #       {
-  #         "interactiveLogin": true,
-  #         "httpServer": "NettyWrapper",
-  #         "tokenCallbacks": []
-  #       }
-  #
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+
+  create-bucket:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc mb myminio/gothreads --ignore-existing;
+      mc anonymous set download myminio/gothreads;
+      exit 0;
+      "
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - ai
+
   rembg:
     image: danielgatis/rembg:latest
-    command: s -p 5000
     ports:
       - "5000:5000"
-    environment:
-      MODEL: u2net
-
-  catvton:
-    build:
-      context: ./mockups/catvton
-    ports:
-      - "7860:7860"
-    volumes:
-      - huggingface-cache:/root/.cache/huggingface
-    devices:
-      - /dev/kfd:/dev/kfd
-      - /dev/dri:/dev/dri
-    group_add:
-      - video
-      - render
-    security_opt:
-      - seccomp:unconfined
-    environment:
-      - HSA_OVERRIDE_GFX_VERSION=11.0.0
-      - PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
-      - GRADIO_SERVER_NAME=0.0.0.0
-      - GRADIO_SERVER_PORT=7860
-
-  # ladivton-shoes:
-  #   build:
-  #     context: ./mockups/ladivton-shoes
-  #   dns:
-  #     - 1.1.1.1
-  #   ports:
-  #     - "8558:8558"
-  #   volumes:
-  #     - huggingface-cache:/root/.cache/huggingface
-  #   devices:
-  #     - /dev/kfd:/dev/kfd
-  #     - /dev/dri:/dev/dri
-  #   group_add:
-  #     - video
-  #     - render
-  #   security_opt:
-  #     - seccomp:unconfined
-  #   environment:
-  #     - HSA_OVERRIDE_GFX_VERSION=11.5.1
-  #     - PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+    command: ["p", "--host", "0.0.0.0", "--port", "5000"]
+    restart: unless-stopped
+    profiles:
+      - ai
 
 volumes:
-  postgres-data:
-  seaweedfs-data:
-  huggingface-cache:
+  postgres_data:
+  minio_data:
+  gothreads_data:
+  ollama_data:

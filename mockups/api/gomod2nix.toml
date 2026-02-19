@@ -1,0 +1,130 @@
+schema = 3
+
+[mod]
+  [mod.'github.com/PuerkitoBio/goquery']
+    version = 'v1.11.0'
+    hash = 'sha256-Au/xzPOirIaMb9ElkMsJtOzqXBhqM5+4K0EQIo4oaPA='
+
+  [mod.'github.com/andybalholm/cascadia']
+    version = 'v1.3.3'
+    hash = 'sha256-jv7ZshpSd7FZzKKN6hqlUgiR8C3y85zNIS/hq7g76Ho='
+
+  [mod.'github.com/antchfx/htmlquery']
+    version = 'v1.3.5'
+    hash = 'sha256-AyfSTQY2eiNPhTS/FVgaBlSzPOObSaluhSee8Gvc8ho='
+
+  [mod.'github.com/antchfx/xmlquery']
+    version = 'v1.5.0'
+    hash = 'sha256-V4YZXG78zNulZFSRin2nYvUvC+WJBnqKzsmt28KIWK8='
+
+  [mod.'github.com/antchfx/xpath']
+    version = 'v1.3.5'
+    hash = 'sha256-AVM0rR81hgVAI0QVzlz4WijFUjByf6Zew3ZwuikKw2Q='
+
+  [mod.'github.com/aws/aws-sdk-go']
+    version = 'v1.55.8'
+    hash = 'sha256-8eDn4xgogWh96B7KUwOa6QoEtLW6QMc5LdsiwFtXTdE='
+
+  [mod.'github.com/bits-and-blooms/bitset']
+    version = 'v1.24.4'
+    hash = 'sha256-Kjo3ZJKHxyJ8+59Zt/Z6ai0S4DTfbzpFZ5ArFIqfxmM='
+
+  [mod.'github.com/go-pkgz/routegroup']
+    version = 'v1.6.0'
+    hash = 'sha256-GgmTFB06Qgz94KJIG5m8Z4HLVBCDHMucjMd0TjuG3YQ='
+
+  [mod.'github.com/gobwas/glob']
+    version = 'v0.2.3'
+    hash = 'sha256-hYHMUdwxVkMOjSKjR7UWO0D0juHdI4wL8JEy5plu/Jc='
+
+  [mod.'github.com/gocolly/colly/v2']
+    version = 'v2.3.0'
+    hash = 'sha256-TqccQTf39cPIyiYRvxumgB8pv75G7FMSdz+scEUZDyw='
+
+  [mod.'github.com/gofrs/uuid/v5']
+    version = 'v5.4.0'
+    hash = 'sha256-RbSw7vig1/d+qEe8q7pJ99l2dbQ95YnaJbnJkR+2BL0='
+
+  [mod.'github.com/golang-jwt/jwt/v5']
+    version = 'v5.3.1'
+    hash = 'sha256-h7AszH+3YWL3IV0+miY9vbtU0gM/2RpuASSGAYAgWcA='
+
+  [mod.'github.com/golang/groupcache']
+    version = 'v0.0.0-20241129210726-2c02b8208cf8'
+    hash = 'sha256-AdLZ3dJLe/yduoNvZiXugZxNfmwJjNQyQGsIdzYzH74='
+
+  [mod.'github.com/golang/protobuf']
+    version = 'v1.5.4'
+    hash = 'sha256-N3+Lv9lEZjrdOWdQhFj6Y3Iap4rVLEQeI8/eFFyAMZ0='
+
+  [mod.'github.com/jackc/pgpassfile']
+    version = 'v1.0.0'
+    hash = 'sha256-H0nFbC34/3pZUFnuiQk9W7yvAMh6qJDrqvHp+akBPLM='
+
+  [mod.'github.com/jackc/pgservicefile']
+    version = 'v0.0.0-20240606120523-5a60cdf6a761'
+    hash = 'sha256-ETpGsLAA2wcm5xJBayr/mZrCE1YsWbnkbSSX3ptrFn0='
+
+  [mod.'github.com/jackc/pgx/v5']
+    version = 'v5.8.0'
+    hash = 'sha256-Mq5/A/Obcceu6kKxUv30DPC2ZaVvD8Iq/YtmLm1BVec='
+
+  [mod.'github.com/jackc/puddle/v2']
+    version = 'v2.2.2'
+    hash = 'sha256-IUxdu4JYfsCh/qlz2SiUWu7EVPHhyooiVA4oaS2Z6yk='
+
+  [mod.'github.com/jmespath/go-jmespath']
+    version = 'v0.4.0'
+    hash = 'sha256-xpT9g2qIXmPq7eeHUXHiDqJeQoHCudh44G/KCSFbcuo='
+
+  [mod.'github.com/joho/godotenv']
+    version = 'v1.5.1'
+    hash = 'sha256-kA0osKfsc6Kp+nuGTRJyXZZlJt1D/kuEazKMWYCWcQ8='
+
+  [mod.'github.com/kennygrant/sanitize']
+    version = 'v1.2.4'
+    hash = 'sha256-PRNblaLosaB7tvUVgAOZORMZGUo+7Wy7h1Z1mpJLd5c='
+
+  [mod.'github.com/kr/text']
+    version = 'v0.2.0'
+    hash = 'sha256-fadcWxZOORv44oak3jTxm6YcITcFxdGt4bpn869HxUE='
+
+  [mod.'github.com/nlnwa/whatwg-url']
+    version = 'v0.6.2'
+    hash = 'sha256-29HH55XUfD7+E8SVBFRlPp/ufkyDBvSOo1QIZKW7Wkc='
+
+  [mod.'github.com/rogpeppe/go-internal']
+    version = 'v1.14.1'
+    hash = 'sha256-6NzhXCCD1Qhj05WHbCDxH5hwfNM6psoAk7uIxm7N55E='
+
+  [mod.'github.com/saintfish/chardet']
+    version = 'v0.0.0-20230101081208-5e3ef4b5456d'
+    hash = 'sha256-JXlHMCbXB8iRQ9wQBGCeTjDSfgaBwUVOpvcjj0iVn5A='
+
+  [mod.'github.com/temoto/robotstxt']
+    version = 'v1.1.2'
+    hash = 'sha256-/0zXEWCnvefGjU2RNxoyZu15KU6WYe9C4m58kyLU6zo='
+
+  [mod.'golang.org/x/net']
+    version = 'v0.47.0'
+    hash = 'sha256-2qFgCd0YfNCGkLrf+xvnhQtKjSe8CymMdLlN3svUYTg='
+
+  [mod.'golang.org/x/sync']
+    version = 'v0.18.0'
+    hash = 'sha256-S8o6y7GOaYWeq+TzT8BB6T+1mg82Mu08V0TL3ukJprg='
+
+  [mod.'golang.org/x/text']
+    version = 'v0.31.0'
+    hash = 'sha256-AT46RrSmV6+/d5FDhs9fPwYzmQ7WSo+YL9tPfhREwLw='
+
+  [mod.'google.golang.org/appengine']
+    version = 'v1.6.8'
+    hash = 'sha256-decMa0MiWfW/Bzr8QPPzzpeya0YWGHhZAt4Cr/bD1wQ='
+
+  [mod.'google.golang.org/protobuf']
+    version = 'v1.36.10'
+    hash = 'sha256-gUrj1qSpjcpRKCBnrYlKMm+P0OSh7B/8EBREstwhD1w='
+
+  [mod.'gopkg.in/yaml.v3']
+    version = 'v3.0.1'
+    hash = 'sha256-FqL9TKYJ0XkNwJFnq9j0VvJ5ZUU1RvH/52h/f5bkYAU='

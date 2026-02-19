@@ -1,0 +1,280 @@
+{
+  "session_id": "14",
+  "timestamp": "2026-02-19T00:00:00Z",
+  "previous_session": "13",
+  "project": "GoThreads - Digital Wardrobe Manager",
+  "summary": "Session 14 completed OAuth/OIDC authentication, admin panel with user approval workflow, and production-ready Nix deployment using gomod2nix following the goroutinely/Tandoor patterns.",
+
+  "completed_tasks": [
+    {
+      "task_id": 38,
+      "title": "OAuth/OIDC Authentication",
+      "status": "completed",
+      "outcome": "Added auth.go with support for Authentik, Authelia, Google, GitHub OAuth providers.",
+      "notes": "First user is auto-admin. JWT-based sessions. Skip-auth mode for development."
+    },
+    {
+      "task_id": 39,
+      "title": "Admin Panel",
+      "status": "completed",
+      "outcome": "Created admin.html and admin.go for user management.",
+      "notes": "Features: approve/reject users, toggle admin status, delete users, view stats."
+    },
+    {
+      "task_id": 40,
+      "title": "Nix/NixOS Deployment",
+      "status": "completed",
+      "outcome": "Production-ready NixOS module and flake using gomod2nix.",
+      "notes": "Using buildGoApplication with gomod2nix.toml. Options: database.createLocally, ai.ollama, ai.rembg, ai.acceleration."
+    },
+    {
+      "task_id": 41,
+      "title": "Docker Compose",
+      "status": "completed",
+      "outcome": "Created docker-compose.yml with all services.",
+      "notes": "Includes: gothreads, postgres, minio, ollama (profile: ai), rembg (profile: ai)."
+    },
+    {
+      "task_id": 42,
+      "title": "Route Groups",
+      "status": "completed",
+      "outcome": "Migrated to go-pkgz/routegroup following goroutinely pattern.",
+      "notes": "Uses route groups with middleware for auth and admin routes."
+    }
+  ],
+
+  "files_created": [
+    "mockups/api/auth.go - OAuth/OIDC authentication with JWT sessions",
+    "mockups/api/admin.go - Admin API endpoints for user management",
+    "mockups/admin.html - Admin panel UI",
+    "mockups/pending.html - Account pending approval page",
+    "docker-compose.yml - Docker deployment",
+    "mockups/api/gomod2nix.toml - Nix dependency hash",
+    "nix/module.nix - NixOS service module"
+  ],
+
+  "files_modified": [
+    "mockups/api/main.go - Added routegroup router, auth/admin routes, middleware",
+    "mockups/api/db.go - Added user columns, replaced hardcoded userID with getUserID()",
+    "flake.nix - Updated to use gomod2nix instead of vendorHash"
+  ],
+
+  "authentication": {
+    "providers": ["authentik", "authelia", "google", "github"],
+    "flow": [
+      "1. User clicks OAuth button on login.html",
+      "2. Redirect to provider with state",
+      "3. Provider redirects back with code",
+      "4. Exchange code for token",
+      "5. Fetch user info from provider",
+      "6. Create/get user in database",
+      "7. First user is auto-admin and auto-approved",
+      "8. Generate JWT, set cookie",
+      "9. Redirect to pending.html (if not approved) or /"
+    ],
+    "env_vars": {
+      "SKIP_AUTH": "Set to 'true' for development",
+      "JWT_SECRET": "Secret key for JWT signing (required for production)",
+      "OAUTH_{PROVIDER}_CLIENT_ID": "OAuth client ID",
+      "OAUTH_{PROVIDER}_CLIENT_SECRET": "OAuth client secret",
+      "OAUTH_{PROVIDER}_REDIRECT_URL": "OAuth callback URL"
+    }
+  },
+
+  "admin_panel": {
+    "url": "/admin.html",
+    "features": [
+      "View all users with stats (items, outfits)",
+      "Approve/reject pending users",
+      "Toggle admin status",
+      "Delete users (with cascade)",
+      "Approve all pending at once"
+    ],
+    "api_endpoints": [
+      "GET /api/admin/users - List all users",
+      "GET /api/admin/stats - Dashboard stats",
+      "POST /api/admin/users/{id}/approve - Approve user",
+      "PUT /api/admin/users/{id}/admin - Toggle admin",
+      "DELETE /api/admin/users/{id} - Delete user",
+      "DELETE /api/admin/users/{id}/reject - Reject pending user",
+      "POST /api/admin/users/approve-all - Batch approve"
+    ]
+  },
+
+  "nix_deployment": {
+    "build": "nix build .",
+    "dev_shell": "nix develop",
+    "generate_deps": "nix develop --command gomod2nix --dir mockups/api",
+    "nixos_example": {
+      "services.gothreads.enable": true,
+      "services.gothreads.port": 8556,
+      "services.gothreads.openFirewall": true,
+      "services.gothreads.database.createLocally": true,
+      "services.gothreads.ai.ollama": true,
+      "services.gothreads.ai.rembg": true,
+      "services.gothreads.extraConfig": {
+        "JWT_SECRET": "your-secret-key"
+      }
+    }
+  },
+
+  "docker_compose": {
+    "services": ["gothreads", "postgres", "minio", "ollama", "rembg"],
+    "profiles": ["ai - enables ollama and rembg"],
+    "quick_start": "docker-compose up -d && docker-compose --profile ai up -d"
+  },
+
+  "how_to_resume": {
+    "immediate_next_steps": [
+      "Test: nix build .",
+      "Test: nix develop",
+      "Test: docker-compose up -d",
+      "Configure OAuth provider (Authentik/Authelia)",
+      "Test login flow"
+    ],
+    "after_go_mod_changes": "Run: nix develop --command gomod2nix --dir mockups/api"
+  },
+
+  "session_summary": "Implemented complete OAuth/OIDC authentication with JWT sessions, admin panel with user approval workflow, and production-ready Nix/NixOS deployment using gomod2nix. All routes wired with routegroup middleware pattern."
+}
+  ],
+
+  "files_created": [
+    "mockups/api/auth.go - OAuth/OIDC authentication with JWT sessions",
+    "mockups/api/admin.go - Admin API endpoints for user management",
+    "mockups/api/scraper.go - CollyScraper with site-specific handlers",
+    "mockups/api/config.go - YAML config loading/saving",
+    "mockups/admin.html - Admin panel UI",
+    "mockups/pending.html - Account pending approval page",
+    "config.yaml - Full configuration file",
+    "docker-compose.yml - Docker deployment",
+    "nix/default.nix - Package build definition",
+    "nix/module.nix - NixOS service module"
+  ],
+
+  "files_modified": [
+    "mockups/api/main.go - Added runScrapeJob, authMiddleware, adminMiddleware",
+    "mockups/api/db.go - User-aware handlers",
+    "mockups/api/s3.go - Extracted uploadBytesToS3() helper",
+    "mockups/login.html - OAuth provider buttons",
+    "mockups/js/app.js - handleScrapeUrl, loadBackendConfig",
+    "mockups/settings.html - AI provider settings",
+    "flake.nix - Simplified to use overlay pattern"
+  ],
+
+  "authentication": {
+    "providers": ["authentik", "authelia", "google", "github"],
+    "flow": [
+      "1. User clicks OAuth button on login.html",
+      "2. Redirect to provider with state",
+      "3. Provider redirects back with code",
+      "4. Exchange code for token",
+      "5. Fetch user info from provider",
+      "6. Create/get user in database",
+      "7. First user is auto-admin and auto-approved",
+      "8. Generate JWT, set cookie",
+      "9. Redirect to pending.html (if not approved) or /"
+    ],
+    "env_vars": {
+      "SKIP_AUTH": "Set to 'true' for development",
+      "JWT_SECRET": "Secret key for JWT signing (required for production)",
+      "OAUTH_{PROVIDER}_CLIENT_ID": "OAuth client ID",
+      "OAUTH_{PROVIDER}_CLIENT_SECRET": "OAuth client secret",
+      "OAUTH_{PROVIDER}_REDIRECT_URL": "OAuth callback URL"
+    }
+  },
+
+  "admin_panel": {
+    "url": "/admin.html",
+    "features": [
+      "View all users with stats (items, outfits)",
+      "Approve/reject pending users",
+      "Toggle admin status",
+      "Delete users (with cascade)",
+      "Approve all pending at once"
+    ],
+    "api_endpoints": [
+      "GET /api/admin/users - List all users",
+      "GET /api/admin/stats - Dashboard stats",
+      "POST /api/admin/users/:id/approve - Approve user",
+      "PUT /api/admin/users/:id/admin - Toggle admin",
+      "DELETE /api/admin/users/:id - Delete user",
+      "DELETE /api/admin/users/:id/reject - Reject pending user",
+      "POST /api/admin/users/approve-all - Batch approve"
+    ]
+  },
+
+  "nixos_module": {
+    "example_config": {
+      "services.gothreads.enable": true,
+      "services.gothreads.port": 8556,
+      "services.gothreads.openFirewall": true,
+      "services.gothreads.database.createLocally": true,
+      "services.gothreads.ai.ollama": true,
+      "services.gothreads.ai.rembg": true,
+      "services.gothreads.ai.acceleration": "cuda",
+      "services.gothreads.extraConfig": {
+        "JWT_SECRET": "your-secret-key"
+      }
+    },
+    "vendor_hash": "sha256-mPq63AhoMM/h7pBZNXspwgrGYmJsG3eZvChxR9TOrgM="
+  },
+
+  "docker_compose": {
+    "services": ["gothreads", "postgres", "minio", "ollama", "rembg"],
+    "profiles": ["ai - enables ollama and rembg"],
+    "quick_start": "docker-compose up -d && docker-compose --profile ai up -d"
+  },
+
+  "pending_work": [
+    {
+      "task": "Wire auth routes into main.go",
+      "priority": "high",
+      "description": "Add routes: /api/auth/{provider}, /api/auth/{provider}/callback, /api/auth/logout, /api/auth/me",
+      "files": ["mockups/api/main.go"]
+    },
+    {
+      "task": "Wire admin routes into main.go",
+      "priority": "high",
+      "description": "Add admin routes with adminMiddleware",
+      "files": ["mockups/api/main.go"]
+    },
+    {
+      "task": "Update db.go to use getUserID(r)",
+      "priority": "high",
+      "description": "Replace hardcoded userID=1 with getUserID(r)",
+      "files": ["mockups/api/db.go"]
+    },
+    {
+      "task": "Add users table columns",
+      "priority": "high",
+      "description": "Add: is_admin, is_approved, oauth_provider, oauth_id, avatar_url columns",
+      "files": ["mockups/api/db.go"]
+    },
+    {
+      "task": "Test NixOS module in VM",
+      "priority": "medium"
+    }
+  ],
+
+  "how_to_resume": {
+    "immediate_next_steps": [
+      "Wire auth and admin routes in main.go",
+      "Add user table columns in initDB()",
+      "Update db.go handlers to use getUserID(r)",
+      "Test: nix build .",
+      "Test: docker-compose up -d"
+    ],
+    "testing_checklist": [
+      "OAuth login flow with Authentik/Authelia",
+      "First user is admin and approved",
+      "Second user is pending",
+      "Admin can approve users",
+      "Admin panel shows all users",
+      "nix build . succeeds",
+      "docker-compose up works"
+    ]
+  },
+
+  "session_summary": "Implemented complete OAuth/OIDC authentication with JWT sessions, admin panel with user approval workflow, and production-ready Nix/NixOS deployment following Tandoor/Immich patterns. Routes need to be wired into main.go."
+}

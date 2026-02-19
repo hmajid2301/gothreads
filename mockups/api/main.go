@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-pkgz/routegroup"
 	"github.com/gofrs/uuid/v5"
 	"github.com/joho/godotenv"
 )
@@ -111,6 +112,7 @@ func getEnv(key, fallback string) string {
 type OllamaRequest struct {
 	Model  string   `json:"model"`
 	Prompt string   `json:"prompt"`
+	System string   `json:"system,omitempty"`
 	Images []string `json:"images,omitempty"` // base64 encoded images
 	Stream bool     `json:"stream"`
 }
@@ -507,6 +509,9 @@ type ScrapeResponse struct {
 }
 
 func main() {
+	// Initialize auth
+	initAuth()
+
 	// Initialize database
 	if err := initDB(); err != nil {
 		log.Printf("⚠️  Database connection failed: %v", err)
@@ -520,55 +525,63 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	router := routegroup.New(mux)
 
 	// Serve static mockup files from parent directory
 	fs := http.FileServer(http.Dir("../"))
-	mux.Handle("/", http.StripPrefix("/", fs))
+	router.Handle("/", http.StripPrefix("/", fs))
 
-	// API endpoints (prefixed to avoid conflicts with static files)
-	mux.HandleFunc("GET /api/health", handleHealth)
-	mux.HandleFunc("GET /api/status", handleStatus)
+	// Public endpoints
+	router.HandleFunc("GET /api/health", handleHealth)
+	router.HandleFunc("GET /api/status", handleStatus)
+	router.HandleFunc("GET /api/config", handleGetConfig)
+	router.HandleFunc("PUT /api/config", handleUpdateConfig)
 
-	// Generic async AI job queue (replaces all sync AI endpoints)
-	mux.HandleFunc("POST /api/ai/jobs", handleAIJobSubmit)
-	mux.HandleFunc("GET /api/ai/jobs/{id}", handleAIJobStatus)
-	mux.HandleFunc("DELETE /api/ai/jobs/{id}", handleAIJobCancel)
+	// Auth endpoints (public)
+	router.HandleFunc("GET /api/auth/{provider}", handleOAuthLogin)
+	router.HandleFunc("GET /api/auth/{provider}/callback", handleOAuthCallback)
+	router.HandleFunc("GET /api/auth/logout", handleLogout)
+	router.HandleFunc("GET /api/auth/me", handleGetCurrentUser)
 
-	// Database CRUD endpoints
-	mux.HandleFunc("GET /api/items", handleListItems)
-	mux.HandleFunc("GET /api/items/{id}", handleGetItem)
-	mux.HandleFunc("POST /api/items", handleCreateItem)
-	mux.HandleFunc("PUT /api/items/{id}", handleUpdateItem)
-	mux.HandleFunc("DELETE /api/items/{id}", handleDeleteItem)
+	// AI job endpoints (public for now, can add auth later)
+	router.HandleFunc("POST /api/ai/jobs", handleAIJobSubmit)
+	router.HandleFunc("GET /api/ai/jobs/{id}", handleAIJobStatus)
+	router.HandleFunc("DELETE /api/ai/jobs/{id}", handleAIJobCancel)
 
-	// Outfit CRUD endpoints
-	mux.HandleFunc("GET /api/outfits", handleListOutfits)
-	mux.HandleFunc("GET /api/outfits/{id}", handleGetOutfit)
-	mux.HandleFunc("POST /api/outfits", handleCreateOutfit)
-	mux.HandleFunc("PUT /api/outfits/{id}", handleUpdateOutfit)
-	mux.HandleFunc("DELETE /api/outfits/{id}", handleDeleteOutfit)
+	// Protected endpoints - require authentication
+	auth := router.Group()
+	auth.Use(authMiddlewareHandler)
+	auth.HandleFunc("GET /api/items", handleListItems)
+	auth.HandleFunc("GET /api/items/{id}", handleGetItem)
+	auth.HandleFunc("POST /api/items", handleCreateItem)
+	auth.HandleFunc("PUT /api/items/{id}", handleUpdateItem)
+	auth.HandleFunc("DELETE /api/items/{id}", handleDeleteItem)
+	auth.HandleFunc("GET /api/outfits", handleListOutfits)
+	auth.HandleFunc("GET /api/outfits/{id}", handleGetOutfit)
+	auth.HandleFunc("POST /api/outfits", handleCreateOutfit)
+	auth.HandleFunc("PUT /api/outfits/{id}", handleUpdateOutfit)
+	auth.HandleFunc("DELETE /api/outfits/{id}", handleDeleteOutfit)
+	auth.HandleFunc("GET /api/calendar", handleListCalendarEvents)
+	auth.HandleFunc("POST /api/calendar", handleUpsertCalendarEvent)
+	auth.HandleFunc("DELETE /api/calendar/{date}", handleDeleteCalendarEvent)
+	auth.HandleFunc("POST /api/wear", handleLogWear)
+	auth.HandleFunc("GET /api/wear", handleGetWearHistory)
+	auth.HandleFunc("POST /api/scrape", handleScrapeURL)
+	auth.HandleFunc("POST /api/upload", handleS3Upload)
 
-	// Calendar endpoints
-	mux.HandleFunc("GET /api/calendar", handleListCalendarEvents)
-	mux.HandleFunc("POST /api/calendar", handleUpsertCalendarEvent)
-	mux.HandleFunc("DELETE /api/calendar/{date}", handleDeleteCalendarEvent)
-
-	// Wear history endpoints
-	mux.HandleFunc("POST /api/wear", handleLogWear)
-	mux.HandleFunc("GET /api/wear", handleGetWearHistory)
-
-	// Web Scraper
-	mux.HandleFunc("POST /api/scrape", handleScrapeURL)
-
-	// S3 upload endpoint
-	mux.HandleFunc("POST /api/upload", handleS3Upload)
-
-	// Configuration endpoints
-	mux.HandleFunc("GET /api/config", handleGetConfig)
-	mux.HandleFunc("PUT /api/config", handleUpdateConfig)
+	// Admin endpoints - require admin privileges
+	admin := router.Group()
+	admin.Use(authMiddlewareHandler, adminMiddlewareHandler)
+	admin.HandleFunc("GET /api/admin/users", handleAdminGetUsers)
+	admin.HandleFunc("GET /api/admin/stats", handleAdminGetStats)
+	admin.HandleFunc("POST /api/admin/users/{id}/approve", handleAdminApproveUser)
+	admin.HandleFunc("PUT /api/admin/users/{id}/admin", handleAdminSetAdmin)
+	admin.HandleFunc("DELETE /api/admin/users/{id}", handleAdminDeleteUser)
+	admin.HandleFunc("DELETE /api/admin/users/{id}/reject", handleAdminRejectUser)
+	admin.HandleFunc("POST /api/admin/users/approve-all", handleAdminApproveAll)
 
 	// Wrap with CORS middleware
-	handler := corsMiddleware(mux)
+	handler := corsMiddleware(router)
 
 	port := getEnv("PORT", "8556")
 	log.Printf("Starting mockup server on :%s", port)
@@ -609,6 +622,49 @@ func main() {
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// Middleware handlers for routegroup
+func authMiddlewareHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authConfig.SkipAuth {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		user := getUserFromRequest(r)
+		if user == nil {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				writeError(w, http.StatusUnauthorized, "Authentication required")
+				return
+			}
+			http.Redirect(w, r, "/login.html", http.StatusSeeOther)
+			return
+		}
+
+		if !user.IsApproved {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				writeError(w, http.StatusForbidden, "Account pending approval")
+				return
+			}
+			http.Redirect(w, r, "/pending.html", http.StatusSeeOther)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), "user", user)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func adminMiddlewareHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := getUserFromRequest(r)
+		if user == nil || !user.IsAdmin {
+			writeError(w, http.StatusForbidden, "Admin access required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -1198,27 +1254,6 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-// callOllamaWithFallback tries the primary model, and if it fails (rate limit, error),
-// falls back to the fallback model. Returns the parsed response, the model used, and any error.
-func callOllamaWithFallback(prompt string, images []string, primaryModel, fallbackModel string) (*OllamaResponse, string, error) {
-	resp, err := callOllama(prompt, images, primaryModel)
-	if err == nil {
-		return resp, primaryModel, nil
-	}
-
-	// If primary and fallback are the same, don't retry
-	if primaryModel == fallbackModel {
-		return nil, primaryModel, err
-	}
-
-	log.Printf("⚠️  %s failed (%v), falling back to local model %s", primaryModel, err, fallbackModel)
-	resp, err = callOllama(prompt, images, fallbackModel)
-	if err != nil {
-		return nil, fallbackModel, err
-	}
-	return resp, fallbackModel, nil
-}
-
 func stripDataURIPrefix(s string) string {
 	if idx := strings.Index(s, ","); idx != -1 && strings.HasPrefix(s, "data:") {
 		return s[idx+1:]
@@ -1226,7 +1261,31 @@ func stripDataURIPrefix(s string) string {
 	return s
 }
 
+const fashionSystemPrompt = "You are a helpful fashion consultant and wardrobe assistant. Provide concise, practical advice about clothing, style, and outfit coordination."
+
+func callOllamaWithFallback(prompt string, images []string, primaryModel, fallbackModel string) (*OllamaResponse, string, error) {
+	resp, err := callOllama(prompt, images, primaryModel)
+	if err == nil {
+		return resp, primaryModel, nil
+	}
+
+	if primaryModel == fallbackModel {
+		return nil, primaryModel, err
+	}
+
+	log.Printf("⚠️  Ollama %s failed (%v), falling back to %s", primaryModel, err, fallbackModel)
+	resp, err = callOllama(prompt, images, fallbackModel)
+	if err != nil {
+		return nil, fallbackModel, err
+	}
+	return resp, fallbackModel, nil
+}
+
 func callOllama(prompt string, images []string, model string) (*OllamaResponse, error) {
+	return callOllamaWithSystem(prompt, images, model, fashionSystemPrompt)
+}
+
+func callOllamaWithSystem(prompt string, images []string, model, system string) (*OllamaResponse, error) {
 	log.Printf("🤖 Calling Ollama model: %s", model)
 	cleanImages := make([]string, len(images))
 	for i, img := range images {
@@ -1235,6 +1294,7 @@ func callOllama(prompt string, images []string, model string) (*OllamaResponse, 
 	ollamaReq := OllamaRequest{
 		Model:  model,
 		Prompt: prompt,
+		System: system,
 		Images: cleanImages,
 		Stream: false,
 	}

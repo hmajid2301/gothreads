@@ -4,8 +4,10 @@ go 1.24.0
 
 require (
 	github.com/aws/aws-sdk-go v1.55.8
+	github.com/go-pkgz/routegroup v1.6.0
 	github.com/gocolly/colly/v2 v2.3.0
 	github.com/gofrs/uuid/v5 v5.4.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/joho/godotenv v1.5.1
 	gopkg.in/yaml.v3 v3.0.1

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel - GoThreads</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .admin-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: white;
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .stat-label {
+      color: var(--text-neutral);
+      font-size: 0.875rem;
+    }
+    .users-table {
+      background: white;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .users-table table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .users-table th, .users-table td {
+      padding: 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .users-table th {
+      background: var(--warm-bg);
+      font-weight: 600;
+    }
+    .user-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-admin { background: #fef3c7; color: #92400e; }
+    .badge-pending { background: #fee2e2; color: #991b1b; }
+    .badge-approved { background: #d1fae5; color: #065f46; }
+    .btn-sm {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      margin-right: 0.25rem;
+    }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-success { background: #10b981; color: white; }
+    .btn-warning { background: #f59e0b; color: white; }
+    .pending-section {
+      margin-bottom: 2rem;
+    }
+    .pending-section h2 {
+      color: #dc2626;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-neutral);
+    }
+    .batch-actions {
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <a href="index.html" class="logo">🧵 go-threads</a>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="wardrobe.html">Wardrobe</a>
+        <a href="admin.html" class="active">Admin</a>
+        <a href="settings.html">Settings</a>
+        <a href="/api/auth/logout">Logout</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="admin-header">
+      <h1>Admin Panel</h1>
+      <span id="current-user"></span>
+    </div>
+
+    <div class="stats-grid" id="stats">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-users">-</div>
+        <div class="stat-label">Total Users</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-pending">-</div>
+        <div class="stat-label">Pending Approval</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-items">-</div>
+        <div class="stat-label">Total Items</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-outfits">-</div>
+        <div class="stat-label">Total Outfits</div>
+      </div>
+    </div>
+
+    <div class="pending-section" id="pending-section" style="display:none;">
+      <h2>⏳ Pending Users</h2>
+      <div class="batch-actions">
+        <button class="btn btn-success" onclick="approveAllPending()">Approve All</button>
+      </div>
+      <div class="users-table">
+        <table>
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Email</th>
+              <th>Provider</th>
+              <th>Joined</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="pending-users"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2>All Users</h2>
+    <div class="users-table">
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Email</th>
+            <th>Provider</th>
+            <th>Status</th>
+            <th>Items</th>
+            <th>Outfits</th>
+            <th>Joined</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="all-users"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    async function loadStats() {
+      const res = await fetch('/api/admin/stats');
+      const stats = await res.json();
+      document.getElementById('stat-users').textContent = stats.total_users || 0;
+      document.getElementById('stat-pending').textContent = stats.pending_users || 0;
+      document.getElementById('stat-items').textContent = stats.total_items || 0;
+      document.getElementById('stat-outfits').textContent = stats.total_outfits || 0;
+    }
+
+    async function loadUsers() {
+      const res = await fetch('/api/admin/users');
+      const users = await res.json();
+      
+      const pendingUsers = users.filter(u => !u.is_approved);
+      const pendingSection = document.getElementById('pending-section');
+      const pendingTbody = document.getElementById('pending-users');
+      
+      if (pendingUsers.length > 0) {
+        pendingSection.style.display = 'block';
+        pendingTbody.innerHTML = pendingUsers.map(u => `
+          <tr>
+            <td>
+              <div style="display:flex;align-items:center;gap:0.5rem;">
+                ${u.avatar_url ? `<img src="${u.avatar_url}" class="user-avatar">` : '<div class="user-avatar" style="background:var(--warm-bg);display:flex;align-items:center;justify-content:center;">👤</div>'}
+                <div>
+                  <div style="font-weight:600;">${u.name || 'Unknown'}</div>
+                </div>
+              </div>
+            </td>
+            <td>${u.email}</td>
+            <td>${u.oauth_provider}</td>
+            <td>${new Date(u.created_at).toLocaleDateString()}</td>
+            <td>
+              <button class="btn btn-success btn-sm" onclick="approveUser('${u.id}')">Approve</button>
+              <button class="btn btn-danger btn-sm" onclick="rejectUser('${u.id}')">Reject</button>
+            </td>
+          </tr>
+        `).join('');
+      } else {
+        pendingSection.style.display = 'none';
+      }
+
+      const allTbody = document.getElementById('all-users');
+      allTbody.innerHTML = users.map(u => `
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+              ${u.avatar_url ? `<img src="${u.avatar_url}" class="user-avatar">` : '<div class="user-avatar" style="background:var(--warm-bg);display:flex;align-items:center;justify-content:center;">👤</div>'}
+              <div>
+                <div style="font-weight:600;">${u.name || 'Unknown'}</div>
+              </div>
+            </div>
+          </td>
+          <td>${u.email}</td>
+          <td>${u.oauth_provider}</td>
+          <td>
+            ${u.is_admin ? '<span class="badge badge-admin">Admin</span>' : ''}
+            ${u.is_approved ? '<span class="badge badge-approved">Approved</span>' : '<span class="badge badge-pending">Pending</span>'}
+          </td>
+          <td>${u.item_count || 0}</td>
+          <td>${u.outfit_count || 0}</td>
+          <td>${new Date(u.created_at).toLocaleDateString()}</td>
+          <td>
+            <button class="btn btn-sm ${u.is_admin ? 'btn-warning' : 'btn-success'}" onclick="toggleAdmin('${u.id}', ${!u.is_admin})">
+              ${u.is_admin ? 'Remove Admin' : 'Make Admin'}
+            </button>
+            ${!u.is_approved ? `<button class="btn btn-success btn-sm" onclick="approveUser('${u.id}')">Approve</button>` : ''}
+            <button class="btn btn-danger btn-sm" onclick="deleteUser('${u.id}', '${u.email}')">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function approveUser(id) {
+      if (!confirm('Approve this user?')) return;
+      await fetch(`/api/admin/users/${id}/approve`, { method: 'POST' });
+      loadUsers();
+      loadStats();
+    }
+
+    async function rejectUser(id) {
+      if (!confirm('Reject and delete this user? This cannot be undone.')) return;
+      await fetch(`/api/admin/users/${id}/reject`, { method: 'DELETE' });
+      loadUsers();
+      loadStats();
+    }
+
+    async function toggleAdmin(id, makeAdmin) {
+      if (!confirm(makeAdmin ? 'Make this user an admin?' : 'Remove admin status from this user?')) return;
+      await fetch(`/api/admin/users/${id}/admin`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_admin: makeAdmin })
+      });
+      loadUsers();
+    }
+
+    async function deleteUser(id, email) {
+      if (!confirm(`Delete user "${email}" and all their data? This cannot be undone.`)) return;
+      await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+      loadUsers();
+      loadStats();
+    }
+
+    async function approveAllPending() {
+      if (!confirm('Approve all pending users?')) return;
+      const res = await fetch('/api/admin/users/approve-all', { method: 'POST' });
+      const data = await res.json();
+      alert(`Approved ${data.approved} users`);
+      loadUsers();
+      loadStats();
+    }
+
+    async function loadCurrentUser() {
+      try {
+        const res = await fetch('/api/auth/me');
+        const user = await res.json();
+        document.getElementById('current-user').textContent = `Logged in as: ${user.name} (${user.email})`;
+      } catch (e) {
+        window.location.href = '/login.html';
+      }
+    }
+
+    loadStats();
+    loadUsers();
+    loadCurrentUser();
+  </script>
+</body>
+</html>

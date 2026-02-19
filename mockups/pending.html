@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Pending - GoThreads</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .pending-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--warm-bg) 0%, #ffe4d6 100%);
+    }
+    .pending-card {
+      background: white;
+      border-radius: 1rem;
+      padding: 3rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      max-width: 450px;
+      width: 100%;
+      text-align: center;
+    }
+    .pending-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+    .pending-title {
+      font-size: 1.75rem;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    .pending-subtitle {
+      color: var(--text-neutral);
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: #fef3c7;
+      color: #92400e;
+      border-radius: 2rem;
+      font-weight: 600;
+      margin-bottom: 2rem;
+    }
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid #92400e;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .info-list {
+      text-align: left;
+      background: var(--warm-bg);
+      padding: 1.5rem;
+      border-radius: 0.5rem;
+      margin-bottom: 2rem;
+    }
+    .info-list h3 {
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+    .info-list ul {
+      list-style: none;
+      padding: 0;
+    }
+    .info-list li {
+      padding: 0.5rem 0;
+      padding-left: 1.5rem;
+      position: relative;
+      color: var(--text-neutral);
+    }
+    .info-list li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      color: var(--primary);
+    }
+    .logout-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-base);
+      padding: 0.75rem 2rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .logout-btn:hover {
+      background: var(--warm-bg);
+    }
+  </style>
+</head>
+<body>
+  <div class="pending-page">
+    <div class="pending-card">
+      <div class="pending-icon">⏳</div>
+      <h1 class="pending-title">Account Pending</h1>
+      <p class="pending-subtitle">
+        Your account is waiting for administrator approval. 
+        You'll receive access once an admin reviews and approves your registration.
+      </p>
+      
+      <div class="status-badge">
+        <div class="spinner"></div>
+        Awaiting Approval
+      </div>
+
+      <div class="info-list">
+        <h3>What happens next?</h3>
+        <ul>
+          <li>An administrator will review your account</li>
+          <li>Once approved, you can access your wardrobe</li>
+          <li>You'll be automatically redirected when approved</li>
+        </ul>
+      </div>
+
+      <button class="logout-btn" onclick="window.location.href='/api/auth/logout'">
+        Logout
+      </button>
+    </div>
+  </div>
+
+  <script>
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          const user = await res.json();
+          if (user.is_approved) {
+            window.location.href = '/';
+          }
+        }
+      } catch (e) {
+        window.location.href = '/login.html';
+      }
+    }
+
+    checkStatus();
+    setInterval(checkStatus, 10000);
+  </script>
+</body>
+</html>

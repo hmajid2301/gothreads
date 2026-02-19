@@ -30,9 +30,30 @@ func initDB() error {
 
 	log.Println("📊 Database connected:", connString)
 
-	// Ensure default user exists (mockup uses hardcoded user_id=1)
+	// Add user columns if they don't exist
+	userColumns := []string{
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider TEXT DEFAULT ''",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_id TEXT DEFAULT ''",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS is_approved BOOLEAN DEFAULT false",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+	}
+	for _, sql := range userColumns {
+		_, err = dbPool.Exec(context.Background(), sql)
+		if err != nil {
+			log.Printf("⚠️  Could not add user column: %v", err)
+		}
+	}
+
+	// Ensure default user exists (for development/demo mode)
 	_, err = dbPool.Exec(context.Background(),
-		`INSERT INTO users (id, email, name) VALUES (1, 'local@gothreads.dev', 'Local User') ON CONFLICT (id) DO NOTHING`)
+		`INSERT INTO users (id, email, name, is_admin, is_approved) 
+		 VALUES (1, 'local@gothreads.dev', 'Local User', true, true) 
+		 ON CONFLICT (id) DO UPDATE SET is_admin = true, is_approved = true`)
 	if err != nil {
 		log.Printf("⚠️  Could not ensure default user: %v", err)
 	}
@@ -56,7 +77,7 @@ func initDB() error {
 
 // GET /api/items - List all items for user
 func handleListItems(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1) // TODO: Get from auth
+	userID := getUserID(r)
 
 	rows, err := dbPool.Query(context.Background(),
 		"SELECT id, name, description, category, price, brand, color, image_url, wear_count, max_wears, ai_analysis, tags FROM items WHERE user_id = $1 ORDER BY created_at DESC",
@@ -116,7 +137,7 @@ func handleListItems(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/items/:id - Get single item
 func handleGetItem(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1) // TODO: Get from auth
+	userID := getUserID(r)
 	itemIDStr := r.PathValue("id")
 	itemID, err := strconv.ParseInt(itemIDStr, 10, 64)
 	if err != nil {
@@ -180,7 +201,7 @@ func handleGetItem(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/items - Create new item
 func handleCreateItem(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1) // TODO: Get from auth
+	userID := getUserID(r)
 
 	var req struct {
 		Name        string   `json:"name"`
@@ -243,7 +264,7 @@ func handleCreateItem(w http.ResponseWriter, r *http.Request) {
 
 // PUT /api/items/:id - Update item
 func handleUpdateItem(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1) // TODO: Get from auth
+	userID := getUserID(r)
 	itemIDStr := r.PathValue("id")
 	itemID, err := strconv.ParseInt(itemIDStr, 10, 64)
 	if err != nil {
@@ -291,7 +312,7 @@ func handleUpdateItem(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /api/items/:id - Delete item
 func handleDeleteItem(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1) // TODO: Get from auth
+	userID := getUserID(r)
 	itemIDStr := r.PathValue("id")
 	itemID, err := strconv.ParseInt(itemIDStr, 10, 64)
 	if err != nil {
@@ -326,7 +347,7 @@ func nullString(s string) *string {
 
 // GET /api/outfits - List all outfits for user
 func handleListOutfits(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1) // TODO: Get from auth
+	userID := getUserID(r)
 
 	rows, err := dbPool.Query(context.Background(),
 		`SELECT id, name, notes, wear_count, rating, ratings, body_image_url, created_at FROM outfits WHERE user_id = $1 ORDER BY created_at DESC`,
@@ -410,7 +431,7 @@ func handleListOutfits(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/outfits/{id} - Get single outfit
 func handleGetOutfit(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1)
+	userID := getUserID(r)
 	outfitIDStr := r.PathValue("id")
 	outfitID, err := strconv.ParseInt(outfitIDStr, 10, 64)
 	if err != nil {
@@ -485,7 +506,7 @@ func handleGetOutfit(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/outfits - Create new outfit
 func handleCreateOutfit(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1)
+	userID := getUserID(r)
 
 	var req struct {
 		Name         string         `json:"name"`
@@ -543,7 +564,7 @@ func handleCreateOutfit(w http.ResponseWriter, r *http.Request) {
 
 // PUT /api/outfits/{id} - Update outfit
 func handleUpdateOutfit(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1)
+	userID := getUserID(r)
 	outfitIDStr := r.PathValue("id")
 	outfitID, err := strconv.ParseInt(outfitIDStr, 10, 64)
 	if err != nil {
@@ -602,7 +623,7 @@ func handleUpdateOutfit(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /api/outfits/{id} - Delete outfit
 func handleDeleteOutfit(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1)
+	userID := getUserID(r)
 	outfitIDStr := r.PathValue("id")
 	outfitID, err := strconv.ParseInt(outfitIDStr, 10, 64)
 	if err != nil {
@@ -628,7 +649,7 @@ func handleDeleteOutfit(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/calendar - List calendar events (optional ?start=&end= date range)
 func handleListCalendarEvents(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1)
+	userID := getUserID(r)
 
 	startDate := r.URL.Query().Get("start")
 	endDate := r.URL.Query().Get("end")
@@ -694,7 +715,7 @@ func handleListCalendarEvents(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/calendar - Upsert calendar event
 func handleUpsertCalendarEvent(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1)
+	userID := getUserID(r)
 
 	var req struct {
 		Date      string `json:"date"` // YYYY-MM-DD
@@ -739,7 +760,7 @@ func handleUpsertCalendarEvent(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /api/calendar/{date} - Delete calendar event by date
 func handleDeleteCalendarEvent(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1)
+	userID := getUserID(r)
 	date := r.PathValue("date")
 
 	_, err := dbPool.Exec(context.Background(),
@@ -760,7 +781,7 @@ func handleDeleteCalendarEvent(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/wear - Log wear event (wears an outfit, increments counts)
 func handleLogWear(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1)
+	userID := getUserID(r)
 
 	var req struct {
 		OutfitID int64  `json:"outfit_id"`
@@ -825,7 +846,7 @@ func handleLogWear(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/wear - Get wear history (optional ?item_id= or ?outfit_id=)
 func handleGetWearHistory(w http.ResponseWriter, r *http.Request) {
-	userID := int64(1)
+	userID := getUserID(r)
 
 	query := `SELECT id, item_id, outfit_id, worn_at FROM wear_history WHERE user_id = $1`
 	args := []interface{}{userID}

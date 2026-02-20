@@ -143,7 +143,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-07 | Phase 2 | Pending |
 | UI-01 | Phase 2 | Pending |
 | UI-02 | Phase 2 | Pending |
-| UI-03 | Phase 2 | Pending |
+| UI-03 | Phase 5 | Pending |
 | UI-04 | Phase 2 | Pending |
 | AI-01 | Phase 3 | Pending |
 | AI-02 | Phase 3 | Pending |
@@ -180,7 +180,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ANAL-06 | Phase 4 | Pending |
 | UI-05 | Phase 4 | Pending |
 | UI-06 | Phase 4 | Pending |
-| UI-07 | Phase 4 | Pending |
+| UI-07 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 43 total

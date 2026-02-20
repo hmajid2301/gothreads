@@ -92,6 +92,22 @@ Based on project research findings:
 - Phase 3: Ollama integration patterns, queue system design
 - Phase 4: Voice processing APIs, weather service integration
 
+### Phase 5: improve the UI to make it more friendly for mobile and also tidy it up, so that pages make more sense UX/DX
+
+**Goal:** Transform existing UI into mobile-first responsive design with consolidated navigation and PWA capabilities
+**Depends on:** Phase 4
+**Requirements**: UI-03, UI-07
+**Success Criteria** (what must be TRUE):
+  1. Mobile users can navigate comfortably with touch gestures on screens from 320px width upward
+  2. Navigation structure reduced to exactly 4 tabs with wardrobe+analytics combined  
+  3. App works offline for browsing existing wardrobe items and can be installed as PWA
+  4. Theme toggle allows switching between light and dark modes
+**Plans:** 2 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Mobile-first responsive design and navigation consolidation
+- [ ] 05-02-PLAN.md — PWA implementation with offline capabilities and JavaScript organization
+
 ---
 *Generated: 2026-02-20*  
 *Next: `/gsd-plan-phase 1`*

@@ -26,6 +26,9 @@
 
 ## Accumulated Context
 
+### Roadmap Evolution
+- Phase 5 added: improve the UI to make it more friendly for mobile and also tidy it up, so that pages make more sense UX/DX
+
 ### Key Decisions Made
 1. **Phase structure:** Foundation-first approach with 4 phases for "quick" depth setting
 2. **Requirement mapping:** All 43 v1 requirements distributed across phases based on technical dependencies

@@ -14,8 +14,6 @@
         <a href="index.html" class="active">Home</a>
         <a href="wardrobe.html">Wardrobe</a>
         <a href="outfits.html">Outfits</a>
-        <a href="calendar.html">Calendar</a>
-        <a href="analytics.html">Analytics</a>
         <a href="settings.html">Settings</a>
       </nav>
     </div>
@@ -65,10 +63,58 @@
     </div>
   </main>
 
+  <!-- Mobile Navigation -->
+  <div class="mobile-nav">
+    <a href="index.html" class="mobile-nav-item active">
+      <span class="nav-icon">🏠</span>
+      <span>Home</span>
+    </a>
+    <a href="wardrobe.html" class="mobile-nav-item">
+      <span class="nav-icon">👔</span>
+      <span>Wardrobe</span>
+    </a>
+    <a href="outfits.html" class="mobile-nav-item">
+      <span class="nav-icon">✨</span>
+      <span>Outfits</span>
+    </a>
+    <a href="settings.html" class="mobile-nav-item">
+      <span class="nav-icon">⚙️</span>
+      <span>Settings</span>
+    </a>
+  </div>
+
+  <!-- Global floating upload button -->
+  <button class="floating-upload-btn" onclick="window.location.href='wardrobe.html'" title="Upload new item">
+    <span>+</span>
+  </button>
+
+  <!-- Theme toggle button -->
+  <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+    <span>🌙</span>
+  </button>
+
   <script src="js/app.js"></script>
   <script>
     // Render recent items on home page
     renderItemGrid(uploadedItems.slice(0, 4), 'recent-items');
+    
+    // Theme toggle functionality
+    function toggleTheme() {
+      const currentTheme = document.documentElement.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      
+      // Update button icon
+      const btn = document.querySelector('.theme-toggle span');
+      btn.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+    }
+    
+    // Load saved theme
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    const btn = document.querySelector('.theme-toggle span');
+    btn.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
   </script>
 </body>
 </html>

@@ -14,8 +14,6 @@
         <a href="index.html">Home</a>
         <a href="wardrobe.html" class="active">Wardrobe</a>
         <a href="outfits.html">Outfits</a>
-        <a href="calendar.html">Calendar</a>
-        <a href="analytics.html">Analytics</a>
         <a href="settings.html">Settings</a>
       </nav>
     </div>
@@ -32,11 +30,26 @@
 
       <!-- Upload Section (Collapsible) -->
       <div id="upload-section" style="display: none; margin-bottom: 1.5rem;">
-        <div class="card upload-area" onclick="document.getElementById('upload-input').click()">
+        <!-- Upload Mode Toggle -->
+        <div class="card" style="margin-bottom: 1rem; padding: 1rem;">
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <span style="font-weight: 600;">Upload Mode:</span>
+            <label style="display: flex; align-items: center; gap: 0.5rem;">
+              <input type="radio" name="upload-mode" value="individual" checked onchange="updateUploadMode()">
+              <span>Individual Items</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem;">
+              <input type="radio" name="upload-mode" value="full-outfit" onchange="updateUploadMode()">
+              <span>Full Outfit (Auto-segment)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card upload-area" id="upload-area" onclick="handleUploadAreaClick()">
           <div style="text-align: center; padding: 2rem; border: 2px dashed var(--border); border-radius: 0.5rem; background: var(--bg-neutral);">
-            <div style="font-size: 2rem; margin-bottom: 0.5rem;">☁️</div>
-            <p style="margin: 0; color: var(--text-neutral); font-weight: 500;">Drag & drop images here or click to upload</p>
-            <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-neutral);">Supports JPG, PNG, WEBP</p>
+            <div id="upload-icon" style="font-size: 2rem; margin-bottom: 0.5rem;">☁️</div>
+            <p id="upload-text" style="margin: 0; color: var(--text-neutral); font-weight: 500;">Drag & drop images here or click to upload</p>
+            <p id="upload-subtext" style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-neutral);">Supports JPG, PNG, WEBP</p>
           </div>
         </div>
         
@@ -130,15 +143,77 @@
         </div>
       </div>
 
+      <!-- Analytics Dashboard Section -->
       <div class="card" style="margin-bottom: 1.5rem;">
-        <h2>👗 Wardrobe Analysis</h2>
-        <p style="color: var(--text-neutral); margin-bottom: 1rem;">
-          Get a complete analysis of your wardrobe: what you have, what's missing, and personalized recommendations.
-        </p>
-        <button id="analyze-wardrobe-btn" class="btn btn-primary" style="width: 100%;">
-          🔍 Analyze My Wardrobe
-        </button>
-        <div id="wardrobe-analysis-result" style="display: none; margin-top: 1.5rem;"></div>
+        <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 1rem;">
+          <h2>📊 Wardrobe Analytics</h2>
+          <button id="toggle-analytics-btn" class="btn btn-secondary" onclick="toggleAnalytics()" style="font-size: 0.875rem;">
+            <span id="analytics-toggle-icon">▼</span> Details
+          </button>
+        </div>
+        
+        <!-- Always visible stats -->
+        <div class="stats-grid" style="margin-bottom: 1rem;">
+          <div class="stat-card" style="padding: 1rem;">
+            <div class="stat-value" id="wardrobe-stat-total-items">24</div>
+            <div class="stat-label">Total Items</div>
+          </div>
+          <div class="stat-card" style="padding: 1rem;">
+            <div class="stat-value" id="wardrobe-stat-total-investment">$1,847</div>
+            <div class="stat-label">Total Investment</div>
+          </div>
+          <div class="stat-card" style="padding: 1rem;">
+            <div class="stat-value" id="wardrobe-stat-avg-cpw">$42.15</div>
+            <div class="stat-label">Avg Cost Per Wear</div>
+          </div>
+          <div class="stat-card" style="padding: 1rem;">
+            <div class="stat-value" id="wardrobe-stat-total-wears">89</div>
+            <div class="stat-label">Total Wears</div>
+          </div>
+        </div>
+
+        <!-- Collapsible detailed analytics -->
+        <div id="analytics-details" style="display: none;">
+          <div class="grid grid-2" style="margin-bottom: 1.5rem;">
+            <div style="background: var(--warm-bg); padding: 1rem; border-radius: 0.5rem;">
+              <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem;">Category Breakdown</h3>
+              <div style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                <div style="text-align: center;">
+                  <div style="font-size: 2rem;">📊</div>
+                  <p style="color: var(--text-neutral); font-size: 0.875rem;">Chart placeholder</p>
+                </div>
+              </div>
+            </div>
+            
+            <div style="background: var(--warm-bg); padding: 1rem; border-radius: 0.5rem;">
+              <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem;">Wear Frequency</h3>
+              <div style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                <div style="text-align: center;">
+                  <div style="font-size: 2rem;">📈</div>
+                  <p style="color: var(--text-neutral); font-size: 0.875rem;">30-day trend</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div style="background: var(--warm-bg); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+            <h3 style="margin: 0 0 1rem 0; font-size: 1rem;">Most Worn Items</h3>
+            <div id="most-worn-summary" style="font-size: 0.875rem; color: var(--text-neutral);">
+              Loading top items...
+            </div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 1rem;">
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">👗 AI Wardrobe Analysis</h3>
+          <p style="color: var(--text-neutral); margin-bottom: 1rem; font-size: 0.875rem;">
+            Get a complete analysis of your wardrobe: what you have, what's missing, and personalized recommendations.
+          </p>
+          <button id="analyze-wardrobe-btn" class="btn btn-primary" style="width: 100%;">
+            🔍 Analyze My Wardrobe
+          </button>
+          <div id="wardrobe-analysis-result" style="display: none; margin-top: 1.5rem;"></div>
+        </div>
       </div>
 
       <div class="grid grid-4" id="wardrobe-grid">
@@ -146,6 +221,36 @@
       </div>
     </div>
   </main>
+
+  <!-- Mobile Navigation -->
+  <div class="mobile-nav">
+    <a href="index.html" class="mobile-nav-item">
+      <span class="nav-icon">🏠</span>
+      <span>Home</span>
+    </a>
+    <a href="wardrobe.html" class="mobile-nav-item active">
+      <span class="nav-icon">👔</span>
+      <span>Wardrobe</span>
+    </a>
+    <a href="outfits.html" class="mobile-nav-item">
+      <span class="nav-icon">✨</span>
+      <span>Outfits</span>
+    </a>
+    <a href="settings.html" class="mobile-nav-item">
+      <span class="nav-icon">⚙️</span>
+      <span>Settings</span>
+    </a>
+  </div>
+
+  <!-- Global floating upload button -->
+  <button class="floating-upload-btn" onclick="toggleUploadArea()" title="Upload new item">
+    <span>+</span>
+  </button>
+
+  <!-- Theme toggle button -->
+  <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+    <span>🌙</span>
+  </button>
 
   <!-- Floating Voice Button -->
   <button class="voice-input-btn floating-voice-btn" onclick="startVoiceInput()" title="Voice commands: 'Show my tops', 'Create outfit', etc.">🎤</button>
@@ -159,6 +264,38 @@
       renderWardrobe('wardrobe-grid');
       initAIStylist();
     });
+    
+    // Analytics toggle functionality
+    function toggleAnalytics() {
+      const details = document.getElementById('analytics-details');
+      const icon = document.getElementById('analytics-toggle-icon');
+      
+      if (details.style.display === 'none' || !details.style.display) {
+        details.style.display = 'block';
+        icon.textContent = '▲';
+      } else {
+        details.style.display = 'none';
+        icon.textContent = '▼';
+      }
+    }
+    
+    // Theme toggle functionality
+    function toggleTheme() {
+      const currentTheme = document.documentElement.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      
+      // Update button icon
+      const btn = document.querySelector('.theme-toggle span');
+      btn.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+    }
+    
+    // Load saved theme
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    const btn = document.querySelector('.theme-toggle span');
+    btn.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
   </script>
 </body>
 </html>

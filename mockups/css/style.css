@@ -1048,6 +1048,29 @@ textarea:focus {
   }
 }
 
+/* Collapsible analytics section */
+#analytics-details {
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+#analytics-details.collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* Analytics toggle button */
+#toggle-analytics-btn {
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+}
+
+#analytics-toggle-icon {
+  transition: transform 0.2s;
+}
+
 /* AI Job Notification Panel */
 @keyframes notifSlideIn {
   from { opacity: 0; transform: translateX(100px); }

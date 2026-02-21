@@ -1135,6 +1135,46 @@ textarea:focus {
   }
 }
 
+/* Page-specific floating button management to prevent competing focal points */
+
+/* Home page: Show theme toggle only (upload actions available in quick actions card) */
+.page-home .floating-upload-btn,
+.page-home .floating-voice-btn {
+  display: none;
+}
+
+/* Wardrobe page: Show floating upload button only (primary action for this page) */
+.page-wardrobe .theme-toggle,
+.page-wardrobe .floating-voice-btn {
+  display: none;
+}
+
+/* Outfits page: Show voice button only (most relevant for outfit interactions) */
+.page-outfits .floating-upload-btn,
+.page-outfits .theme-toggle {
+  display: none;
+}
+
+/* Settings page: Show theme toggle only (most relevant on settings page) */
+.page-settings .floating-upload-btn,
+.page-settings .floating-voice-btn {
+  display: none;
+}
+
+/* Ensure header theme toggle is always visible when floating version is hidden */
+.page-wardrobe #theme-toggle,
+.page-outfits #theme-toggle {
+  display: flex;
+}
+
+/* Hide floating theme toggle on mobile to avoid competing with header version */
+@media (max-width: 767px) {
+  .page-wardrobe .theme-toggle,
+  .page-outfits .theme-toggle {
+    display: none;
+  }
+}
+
 /* Collapsible analytics section */
 #analytics-details {
   transition: all 0.3s ease;

@@ -103,11 +103,13 @@ Based on project research findings:
   2. Navigation structure reduced to exactly 4 tabs with wardrobe+analytics combined  
   3. App works offline for browsing existing wardrobe items and can be installed as PWA
   4. Theme toggle allows switching between light and dark modes
-**Plans:** 2 plans
+**Plans:** 4 plans
 
 Plans:
 - [x] 05-01-PLAN.md — Mobile-first responsive design and navigation consolidation (Completed: 2026-02-21)
 - [x] 05-02-PLAN.md — PWA implementation with offline capabilities and JavaScript organization (Completed: 2026-02-21)
+- [ ] 05-03-PLAN.md — Fix mobile navigation implementation and ensure proper responsive behavior
+- [ ] 05-04-PLAN.md — Implement unified button design system and reduce visual clutter
 
 ---
 *Generated: 2026-02-20*  

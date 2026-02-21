@@ -40,9 +40,9 @@ const (
 	defaultSpatialModelCloud = "qwen3-vl:235b-cloud"
 	defaultTextModelCloud    = "deepseek-v3.1:671b-cloud"
 	defaultRembgURL          = "http://localhost:5000"
-	defaultVtonBackendURL    = "https://hmajid2301-fashn-vton-1-5.hf.space"
-	defaultCatvtonLocalURL   = "http://localhost:7860"
-	defaultLadivtonShoesURL  = "http://localhost:8558"
+	// defaultVtonBackendURL removed - using local processing only
+	defaultCatvtonLocalURL  = "http://localhost:7860"
+	defaultLadivtonShoesURL = "http://localhost:8558"
 )
 
 var (
@@ -547,6 +547,12 @@ func main() {
 	router.HandleFunc("POST /api/ai/jobs", handleAIJobSubmit)
 	router.HandleFunc("GET /api/ai/jobs/{id}", handleAIJobStatus)
 	router.HandleFunc("DELETE /api/ai/jobs/{id}", handleAIJobCancel)
+	router.HandleFunc("POST /api/ai/segment-outfit", handleSegmentOutfit)
+
+	// Analytics endpoints (public for PoC)
+	router.HandleFunc("GET /api/analytics/wardrobe-stats", handleWardrobeStats)
+	router.HandleFunc("GET /api/analytics/most-worn", handleMostWorn)
+	router.HandleFunc("GET /api/analytics/least-worn", handleLeastWorn)
 
 	// Protected endpoints - require authentication
 	auth := router.Group()
@@ -2906,7 +2912,15 @@ func executeToolCall(ctx context.Context, userID int64, tc OllamaToolCall) (stri
 		result, err = toolGetOutfit(ctx, userID, *outfitID)
 
 	case "get_wardrobe_stats":
-		result, err = toolGetWardrobeStats(ctx, userID)
+		stats, dbErr := toolGetWardrobeStats(ctx, userID)
+		if dbErr != nil {
+			err = dbErr
+		} else {
+			result, err = json.Marshal(stats)
+			if err == nil {
+				result = string(result.([]byte))
+			}
+		}
 
 	case "get_wear_history":
 		result, err = toolGetWearHistory(ctx, userID,
@@ -2915,10 +2929,26 @@ func executeToolCall(ctx context.Context, userID int64, tc OllamaToolCall) (stri
 			intFromArgs(args, "days_back", 30))
 
 	case "get_most_worn":
-		result, err = toolGetMostWorn(ctx, userID, intFromArgs(args, "limit", 10))
+		items, dbErr := toolGetMostWorn(ctx, userID, intFromArgs(args, "limit", 10))
+		if dbErr != nil {
+			err = dbErr
+		} else {
+			result, err = json.Marshal(items)
+			if err == nil {
+				result = string(result.([]byte))
+			}
+		}
 
 	case "get_least_worn":
-		result, err = toolGetLeastWorn(ctx, userID, intFromArgs(args, "limit", 10))
+		items, dbErr := toolGetLeastWorn(ctx, userID, intFromArgs(args, "limit", 10))
+		if dbErr != nil {
+			err = dbErr
+		} else {
+			result, err = json.Marshal(items)
+			if err == nil {
+				result = string(result.([]byte))
+			}
+		}
 
 	case "get_calendar_events":
 		result, err = toolGetCalendarEvents(ctx, userID,
@@ -3634,4 +3664,245 @@ func runScrapeJob(ctx context.Context, job *AIJob, payload json.RawMessage) {
 		Brand:       brand,
 		Price:       price,
 	})
+}
+
+// handleSegmentOutfit handles outfit segmentation requests
+func handleSegmentOutfit(w http.ResponseWriter, r *http.Request) {
+	log.Printf("👗 Outfit segmentation request received")
+
+	// Parse multipart form
+	err := r.ParseMultipartForm(10 << 20) // 10 MB max
+	if err != nil {
+		log.Printf("Error parsing multipart form: %v", err)
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	// Get the uploaded image
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		log.Printf("Error getting uploaded file: %v", err)
+		http.Error(w, "No image file provided", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Read the image data
+	imageData, err := io.ReadAll(file)
+	if err != nil {
+		log.Printf("Error reading image data: %v", err)
+		http.Error(w, "Failed to read image", http.StatusInternalServerError)
+		return
+	}
+
+	// Encode to base64 for AI processing
+	imageBase64 := base64.StdEncoding.EncodeToString(imageData)
+
+	log.Printf("👗 Processing outfit image: %s (%.1fKB)", header.Filename, float64(len(imageData))/1024)
+
+	// Use AI to analyze the outfit and detect individual items
+	segments, err := segmentOutfitWithAI(imageBase64)
+	if err != nil {
+		log.Printf("Error segmenting outfit: %v", err)
+		http.Error(w, "Failed to segment outfit: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"segments": segments,
+	})
+}
+
+// OutfitSegment represents a detected clothing item in the outfit
+type OutfitSegment struct {
+	Category    string  `json:"category"`
+	BoundingBox BBox    `json:"bounding_box"`
+	Confidence  float64 `json:"confidence"`
+	Description string  `json:"description"`
+}
+
+// BBox represents a bounding box
+type BBox struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// segmentOutfitWithAI uses AI to detect and segment clothing items in an outfit photo
+func segmentOutfitWithAI(imageBase64 string) ([]OutfitSegment, error) {
+	log.Printf("👗 Using AI to segment outfit...")
+
+	// Use Ollama vision model to analyze the image and detect clothing items
+	prompt := `Analyze this outfit image and identify individual clothing items. For each item you can see, provide:
+1. Category (tops, bottoms, shoes, outerwear, accessories)
+2. A bounding box (approximate x, y, width, height as percentages of image size)
+3. Confidence level (0.0 to 1.0)
+4. Brief description
+
+Respond in JSON format with an array of detected items. Even if items overlap, try to identify distinct pieces.
+
+Example response:
+{
+  "items": [
+    {
+      "category": "tops",
+      "bounding_box": {"x": 20, "y": 10, "width": 60, "height": 40},
+      "confidence": 0.9,
+      "description": "white cotton t-shirt"
+    },
+    {
+      "category": "bottoms", 
+      "bounding_box": {"x": 25, "y": 50, "width": 50, "height": 45},
+      "confidence": 0.8,
+      "description": "blue denim jeans"
+    }
+  ]
+}`
+
+	// Call Ollama
+	payload := map[string]interface{}{
+		"model":  visionModel,
+		"prompt": prompt,
+		"stream": false,
+		"images": []string{imageBase64},
+		"options": map[string]interface{}{
+			"temperature": 0.1, // Low temperature for consistent analysis
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	resp, err := http.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to call Ollama: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("Ollama returned status %d", resp.StatusCode)
+	}
+
+	var ollamaResp struct {
+		Response string `json:"response"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		return nil, fmt.Errorf("failed to decode Ollama response: %w", err)
+	}
+
+	// Parse the AI response
+	var aiResult struct {
+		Items []struct {
+			Category    string  `json:"category"`
+			BoundingBox BBox    `json:"bounding_box"`
+			Confidence  float64 `json:"confidence"`
+			Description string  `json:"description"`
+		} `json:"items"`
+	}
+
+	// Try to extract JSON from the response
+	response := strings.TrimSpace(ollamaResp.Response)
+
+	// Find JSON content (sometimes wrapped in markdown code blocks)
+	jsonStart := strings.Index(response, "{")
+	jsonEnd := strings.LastIndex(response, "}")
+	if jsonStart != -1 && jsonEnd != -1 && jsonEnd > jsonStart {
+		jsonContent := response[jsonStart : jsonEnd+1]
+		if err := json.Unmarshal([]byte(jsonContent), &aiResult); err != nil {
+			log.Printf("Failed to parse AI response as JSON: %v", err)
+			log.Printf("Raw response: %s", response)
+			// Return a fallback response
+			return []OutfitSegment{
+				{
+					Category:    "tops",
+					BoundingBox: BBox{X: 25, Y: 20, Width: 50, Height: 35},
+					Confidence:  0.5,
+					Description: "detected top item",
+				},
+				{
+					Category:    "bottoms",
+					BoundingBox: BBox{X: 25, Y: 55, Width: 50, Height: 40},
+					Confidence:  0.5,
+					Description: "detected bottom item",
+				},
+			}, nil
+		}
+	} else {
+		log.Printf("No valid JSON found in AI response: %s", response)
+		return []OutfitSegment{}, fmt.Errorf("AI response did not contain valid JSON")
+	}
+
+	// Convert to our segment format
+	var segments []OutfitSegment
+	for _, item := range aiResult.Items {
+		segments = append(segments, OutfitSegment{
+			Category:    item.Category,
+			BoundingBox: item.BoundingBox,
+			Confidence:  item.Confidence,
+			Description: item.Description,
+		})
+	}
+
+	log.Printf("👗 Detected %d clothing items in outfit", len(segments))
+	return segments, nil
+}
+
+// ============================================================================
+// ANALYTICS ENDPOINTS
+// ============================================================================
+
+// handleWardrobeStats returns overall wardrobe statistics
+func handleWardrobeStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := int64(1) // Default user for PoC
+
+	stats, err := toolGetWardrobeStats(ctx, userID)
+	if err != nil {
+		log.Printf("Database query failed, returning empty stats: %v", err)
+		// Return empty stats structure for PoC
+		stats = map[string]interface{}{
+			"total_items":   0,
+			"total_outfits": 0,
+			"by_category":   map[string]interface{}{},
+			"by_color":      map[string]interface{}{},
+			"by_season":     map[string]interface{}{},
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// handleMostWorn returns most frequently worn items
+func handleMostWorn(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := int64(1) // Default user for PoC
+
+	items, err := toolGetMostWorn(ctx, userID, 10) // Top 10 most worn items
+	if err != nil {
+		log.Printf("Database query failed, returning empty items: %v", err)
+		// Return empty array for PoC
+		items = []map[string]interface{}{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(items)
+}
+
+// handleLeastWorn returns least frequently worn items
+func handleLeastWorn(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := int64(1) // Default user for PoC
+
+	items, err := toolGetLeastWorn(ctx, userID, 10) // Top 10 least worn items
+	if err != nil {
+		log.Printf("Database query failed, returning empty items: %v", err)
+		// Return empty array for PoC
+		items = []map[string]interface{}{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(items)
 }

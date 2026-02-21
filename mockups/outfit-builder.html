@@ -79,31 +79,63 @@
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 3fr 1fr; gap: 1.5rem;">
-        <div class="card" style="padding: 0;">
-          <div style="padding: 1.5rem; border-bottom: 2px solid var(--border);">
-            <h2 style="margin: 0;">Outfit Canvas</h2>
-            <p style="color: var(--text-neutral); font-size: 0.875rem; margin-top: 0.5rem;">
-              A mannequin is loaded by default. Add items from the right sidebar.
-            </p>
-          </div>
-          <div class="outfit-canvas" id="outfit-canvas" style="background-color: #f8f8f8;">
-            <!-- Items dragged here will be positioned absolutely -->
-            <div id="canvas-placeholder" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--text-neutral); pointer-events: none;">
-              <div style="font-size: 3rem; margin-bottom: 0.5rem;">👕</div>
-              <p style="margin: 0;">Click items from the right to add →</p>
-              <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Then click "✨ Dress with AI" to position them</p>
+      <!-- Desktop layout -->
+      <div class="outfit-canvas-container" style="display: grid; grid-template-columns: 3fr 1fr; gap: 1.5rem;">
+        <!-- Mobile swipe wrapper (hidden on desktop) -->
+        <div class="canvas-swipe-wrapper" style="display: none;">
+          <div class="canvas-swipe-item canvas-view">
+            <div class="card" style="padding: 0;">
+              <div style="padding: 1.5rem; border-bottom: 2px solid var(--border);">
+                <h2 style="margin: 0;">Outfit Canvas</h2>
+                <p style="color: var(--text-neutral); font-size: 0.875rem; margin-top: 0.5rem;">
+                  Swipe right to access items
+                </p>
+              </div>
+              <div class="outfit-canvas" id="outfit-canvas-mobile" style="background-color: #f8f8f8; height: 60vh;">
+                <div id="canvas-placeholder-mobile" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--text-neutral); pointer-events: none;">
+                  <div style="font-size: 3rem; margin-bottom: 0.5rem;">👕</div>
+                  <p style="margin: 0;">Swipe right for items →</p>
+                </div>
+              </div>
             </div>
           </div>
-          <div style="padding: 1.5rem; border-top: 2px solid var(--border); background: var(--warm-bg);">
-            <p style="color: var(--text-neutral); font-size: 0.875rem; text-align: center; margin: 0;">
-              💡 <strong>Quick Start:</strong> Select items → Click "✨ Dress with AI" → Items automatically positioned with proper layering
-            </p>
+          
+          <div class="canvas-swipe-item items-view">
+            <div class="item-picker" id="item-picker-mobile" style="height: 60vh;">
+              <!-- Populated by JavaScript -->
+            </div>
           </div>
         </div>
 
-        <div class="item-picker" id="item-picker">
-          <!-- Populated by JavaScript -->
+        <!-- Desktop layout -->
+        <div class="canvas-view">
+          <div class="card" style="padding: 0;">
+            <div style="padding: 1.5rem; border-bottom: 2px solid var(--border);">
+              <h2 style="margin: 0;">Outfit Canvas</h2>
+              <p style="color: var(--text-neutral); font-size: 0.875rem; margin-top: 0.5rem;">
+                A mannequin is loaded by default. Add items from the right sidebar.
+              </p>
+            </div>
+            <div class="outfit-canvas" id="outfit-canvas" style="background-color: #f8f8f8;">
+              <!-- Items dragged here will be positioned absolutely -->
+              <div id="canvas-placeholder" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--text-neutral); pointer-events: none;">
+                <div style="font-size: 3rem; margin-bottom: 0.5rem;">👕</div>
+                <p style="margin: 0;">Click items from the right to add →</p>
+                <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Then click "✨ Dress with AI" to position them</p>
+              </div>
+            </div>
+            <div style="padding: 1.5rem; border-top: 2px solid var(--border); background: var(--warm-bg);">
+              <p style="color: var(--text-neutral); font-size: 0.875rem; text-align: center; margin: 0;">
+                💡 <strong>Quick Start:</strong> Select items → Click "✨ Dress with AI" → Items automatically positioned with proper layering
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="items-view">
+          <div class="item-picker" id="item-picker">
+            <!-- Populated by JavaScript -->
+          </div>
         </div>
       </div>
 

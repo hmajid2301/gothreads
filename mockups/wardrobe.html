@@ -28,6 +28,18 @@
         </div>
       </div>
 
+      <!-- Mobile Upload Options (shown on mobile only) -->
+      <div class="mobile-upload-options">
+        <button class="mobile-upload-btn" onclick="triggerCameraUpload()">
+          <div class="mobile-upload-icon">📷</div>
+          <div class="mobile-upload-text">Camera</div>
+        </button>
+        <button class="mobile-upload-btn" onclick="triggerGalleryUpload()">
+          <div class="mobile-upload-icon">🖼️</div>
+          <div class="mobile-upload-text">Gallery</div>
+        </button>
+      </div>
+
       <!-- Upload Section (Collapsible) -->
       <div id="upload-section" style="display: none; margin-bottom: 1.5rem;">
         <!-- Upload Mode Toggle -->
@@ -64,8 +76,10 @@
         <div id="upload-queue-panel" style="margin-top: 1rem;"></div>
       </div>
 
-      <!-- Hidden file input -->
+      <!-- Hidden file inputs -->
       <input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp" multiple style="display: none;">
+      <input type="file" id="camera-input" accept="image/*" capture="environment" style="display: none;">
+      <input type="file" id="gallery-input" accept="image/*" multiple style="display: none;">
 
       <!-- Search and Filters -->
       <div class="card" style="margin-bottom: 1.5rem;">
@@ -296,6 +310,79 @@
     document.documentElement.setAttribute('data-theme', savedTheme);
     const btn = document.querySelector('.theme-toggle span');
     btn.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+    
+    // Mobile upload functions
+    function triggerCameraUpload() {
+      // Create file input for camera
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.capture = 'environment'; // Use rear camera
+      input.onchange = (e) => {
+        if (e.target.files.length > 0) {
+          // Show full-screen overlay for processing
+          showUploadOverlay();
+          // Process the file (would normally call upload function)
+          setTimeout(() => {
+            hideUploadOverlay();
+            showToast('Photo uploaded successfully!');
+          }, 2000);
+        }
+      };
+      input.click();
+    }
+    
+    function triggerGalleryUpload() {
+      // Create file input for gallery
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.multiple = true;
+      input.onchange = (e) => {
+        if (e.target.files.length > 0) {
+          showUploadOverlay();
+          setTimeout(() => {
+            hideUploadOverlay();
+            showToast(`${e.target.files.length} image(s) uploaded successfully!`);
+          }, 1500);
+        }
+      };
+      input.click();
+    }
+    
+    // Full-screen overlay functions
+    function showUploadOverlay() {
+      const overlay = document.createElement('div');
+      overlay.className = 'fullscreen-overlay';
+      overlay.id = 'upload-overlay';
+      overlay.innerHTML = `
+        <div class="spinner"></div>
+        <div class="overlay-message">Processing image...</div>
+        <div class="overlay-submessage">Removing background and analyzing item</div>
+        <div class="overlay-progress">
+          <div class="overlay-progress-fill" style="width: 30%"></div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+    }
+    
+    function hideUploadOverlay() {
+      const overlay = document.getElementById('upload-overlay');
+      if (overlay) {
+        overlay.remove();
+      }
+    }
+    
+    function showToast(message) {
+      const toast = document.createElement('div');
+      toast.className = 'toast show success';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.remove();
+      }, 3000);
+    }
   </script>
 </body>
 </html>

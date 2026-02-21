@@ -277,6 +277,16 @@ h1, h2, h3 {
   background: #ffebd6;
 }
 
+.btn-danger {
+  background: #E74C3C;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #C0392B;
+  transform: translateY(-1px);
+}
+
 /* Upload area */
 .upload-area {
   border: 2px dashed var(--primary-light);

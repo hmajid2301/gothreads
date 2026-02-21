@@ -82,7 +82,7 @@ Requirements for production-ready release. Each maps to roadmap phases.
 - [ ] **UI-04**: Implement Alpine.js components for dropdowns, modals, toasts
 - [ ] **UI-05**: Build Svelte outfit canvas component with drag-drop functionality
 - [ ] **UI-06**: Add loading states and progress indicators for all operations
-- [ ] **UI-07**: Implement offline-capable PWA with service worker
+- [x] **UI-07**: Implement offline-capable PWA with service worker
 
 ## v2 Requirements
 
@@ -180,7 +180,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ANAL-06 | Phase 4 | Pending |
 | UI-05 | Phase 4 | Pending |
 | UI-06 | Phase 4 | Pending |
-| UI-07 | Phase 5 | Pending |
+| UI-07 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 43 total

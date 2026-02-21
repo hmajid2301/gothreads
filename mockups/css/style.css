@@ -56,6 +56,13 @@ header {
   box-shadow: var(--shadow);
 }
 
+/* Hide header on mobile to maximize screen real estate */
+@media (max-width: 767px) {
+  header {
+    display: none;
+  }
+}
+
 .header-content {
   display: flex;
   justify-content: space-between;
@@ -150,10 +157,10 @@ nav a.active {
   bottom: 0;
   left: 0;
   right: 0;
-  background: var(--card-bg);
+  background: var(--warm-bg);
   display: flex;
   justify-content: space-around;
-  padding: 0.5rem 0;
+  padding: 0.75rem 0.5rem;
   border-top: 1px solid var(--border);
   z-index: 1000;
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
@@ -165,18 +172,24 @@ nav a.active {
   align-items: center;
   min-width: 44px;
   min-height: 44px;
-  padding: 0.5rem;
+  padding: 0.75rem;
   text-decoration: none;
   color: var(--text-neutral);
   font-size: 0.75rem;
   font-weight: 500;
-  transition: color 0.2s;
-  border-radius: 0.5rem;
+  transition: all 0.2s;
+  border-radius: 0.75rem;
+  background: var(--card-bg);
+  margin: 0.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .mobile-nav-item:hover,
 .mobile-nav-item.active {
   color: var(--primary);
+  background: var(--warm-bg);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .mobile-nav-item .nav-icon {
@@ -245,8 +258,8 @@ h1, h2, h3 {
 }
 
 .btn-primary {
-  background: var(--primary-light);
-  color: var(--text-primary);
+  background: var(--primary);
+  color: white;
 }
 
 .btn-primary:hover {

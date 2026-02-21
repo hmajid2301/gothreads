@@ -1,4 +1,4 @@
-/* Throwaway mockup styles - Using Catppuccin-inspired palette */
+/* Mobile-first responsive styles - Using Catppuccin-inspired palette */
 
 :root {
   --primary: #E8807B;
@@ -12,6 +12,21 @@
   --text-neutral: #8b7b76;
   --border: #e5e7eb;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark theme support via CSS custom properties */
+[data-theme="dark"] {
+  --primary: #FF9B95;
+  --primary-light: #FFD0CE;
+  --primary-hover: #FF8882;
+  --primary-active: #FF746E;
+  --warm-bg: #2D1B16;
+  --card-bg: #3A251F;
+  --text-primary: #F5E6D3;
+  --text-base: #E5D5C8;
+  --text-neutral: #C8B8A8;
+  --border: #4A3428;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 * {
@@ -57,8 +72,9 @@ header {
   gap: 0.5rem;
 }
 
+/* Desktop navigation - hidden on mobile */
 nav {
-  display: flex;
+  display: none;
   gap: 1.5rem;
 }
 
@@ -69,12 +85,78 @@ nav a {
   padding: 0.5rem 1rem;
   border-radius: 0.5rem;
   transition: all 0.2s;
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 nav a:hover,
 nav a.active {
   color: var(--text-primary);
   background: var(--warm-bg);
+}
+
+/* Show desktop navigation on tablet+ */
+@media (min-width: 768px) {
+  nav {
+    display: flex;
+  }
+}
+
+/* Mobile bottom navigation */
+.mobile-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  display: flex;
+  justify-content: space-around;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+  z-index: 1000;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.5rem;
+  text-decoration: none;
+  color: var(--text-neutral);
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: color 0.2s;
+  border-radius: 0.5rem;
+}
+
+.mobile-nav-item:hover,
+.mobile-nav-item.active {
+  color: var(--primary);
+}
+
+.mobile-nav-item .nav-icon {
+  font-size: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Hide mobile nav on tablet+ */
+@media (min-width: 768px) {
+  .mobile-nav {
+    display: none;
+  }
+}
+
+/* Adjust main content for mobile nav */
+@media (max-width: 767px) {
+  main {
+    padding-bottom: 5rem; /* Space for bottom nav */
+  }
 }
 
 /* Main content */
@@ -97,9 +179,11 @@ h1, h2, h3 {
   margin-bottom: 1.5rem;
 }
 
-/* Buttons */
+/* Buttons with proper touch targets */
 .btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0.75rem 1.5rem;
   border-radius: 0.5rem;
   border: none;
@@ -108,6 +192,17 @@ h1, h2, h3 {
   transition: all 0.2s;
   text-decoration: none;
   font-size: 1rem;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Enhanced touch targets for coarse pointer devices */
+@media (any-pointer: coarse) {
+  .btn, .mobile-nav-item, nav a {
+    min-height: 48px;
+    min-width: 48px;
+    padding: 0.875rem 1.5rem;
+  }
 }
 
 .btn-primary {
@@ -173,9 +268,32 @@ h1, h2, h3 {
   grid-template-columns: repeat(4, 1fr);
 }
 
-@media (max-width: 768px) {
-  .grid-2, .grid-3, .grid-4 {
-    grid-template-columns: 1fr;
+/* Mobile-first grid system */
+.grid-2, .grid-3, .grid-4 {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 576px) {
+  .grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 768px) {
+  .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .grid-4 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .grid-4 {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
@@ -362,12 +480,18 @@ textarea:focus {
   }
 }
 
-/* Stats */
+/* Stats grid - mobile-first */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
   margin-bottom: 2rem;
+}
+
+@media (min-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
 }
 
 .stat-card {
@@ -863,6 +987,65 @@ textarea:focus {
   bottom: 100px;
   right: 2rem;
   z-index: 999;
+}
+
+/* Global floating action button for upload */
+.floating-upload-btn {
+  position: fixed;
+  bottom: 6rem;
+  right: 1rem;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  color: white;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 999;
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floating-upload-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Theme toggle button */
+.theme-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: var(--primary);
+  color: white;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  transition: all 0.2s;
+  box-shadow: var(--shadow);
+}
+
+.theme-toggle:hover {
+  background: var(--primary-hover);
+  transform: scale(1.1);
+}
+
+@media (min-width: 768px) {
+  .floating-upload-btn {
+    bottom: 2rem;
+    right: 2rem;
+  }
 }
 
 /* AI Job Notification Panel */

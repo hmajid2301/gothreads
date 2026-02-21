@@ -4,12 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>go-threads - Home</title>
+  <meta name="description" content="Privacy-first digital wardrobe manager with local AI processing">
+  <meta name="theme-color" content="#E8807B">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="manifest" href="manifest.json">
 </head>
 <body>
   <header>
     <div class="container header-content">
       <a href="index.html" class="logo">🧵 go-threads</a>
+      <div class="header-controls">
+        <div id="offline-status" style="display: none;"></div>
+        <button id="theme-toggle" class="btn-icon" title="Toggle theme">🌙</button>
+        <button id="install-pwa-btn" class="btn btn-secondary" style="display: none;">Install App</button>
+      </div>
       <nav>
         <a href="index.html" class="active">Home</a>
         <a href="wardrobe.html">Wardrobe</a>

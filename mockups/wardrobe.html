@@ -4,12 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Wardrobe - go-threads</title>
+  <meta name="description" content="Browse and manage your wardrobe items">
+  <meta name="theme-color" content="#E8807B">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="manifest" href="manifest.json">
 </head>
 <body>
   <header>
     <div class="container header-content">
       <a href="index.html" class="logo">🧵 go-threads</a>
+      <div class="header-controls">
+        <div id="offline-status" style="display: none;"></div>
+        <button id="theme-toggle" class="btn-icon" title="Toggle theme">🌙</button>
+        <button id="mobile-upload-btn" class="btn btn-primary mobile-only">📷 Add Item</button>
+      </div>
       <nav>
         <a href="index.html">Home</a>
         <a href="wardrobe.html" class="active">Wardrobe</a>

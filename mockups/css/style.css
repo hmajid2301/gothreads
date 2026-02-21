@@ -72,6 +72,45 @@ header {
   gap: 0.5rem;
 }
 
+/* Header controls for PWA and theme */
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  margin-right: 1rem;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.btn-icon:hover {
+  background: var(--warm-bg);
+}
+
+/* Mobile-only elements */
+.mobile-only {
+  display: block;
+}
+
+@media (min-width: 768px) {
+  .mobile-only {
+    display: none;
+  }
+}
+
 /* Desktop navigation - hidden on mobile */
 nav {
   display: none;
@@ -1498,5 +1537,90 @@ textarea:focus {
     right: 1rem;
     bottom: 1rem;
   }
+}
+
+/* ============================================================================
+   COLLAPSIBLE SECTIONS (Mobile Analytics)
+   ============================================================================ */
+
+.collapsible-section {
+  border-radius: 0.75rem;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 44px;
+  user-select: none;
+}
+
+.collapsible-header:hover {
+  background: var(--primary-hover);
+}
+
+.collapsible-content {
+  padding: 1rem;
+  background: var(--card-bg);
+  border-top: 1px solid var(--border);
+}
+
+.collapsible-section.collapsed .collapsible-content {
+  display: none;
+}
+
+.toggle-icon {
+  font-size: 1rem;
+  transition: transform 0.3s ease;
+}
+
+.collapsible-section.collapsed .toggle-icon {
+  transform: rotate(-90deg);
+}
+
+/* Mobile swipe interfaces */
+.canvas-swipe-container {
+  touch-action: pan-x;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+}
+
+.canvas-swipe-wrapper {
+  display: flex;
+  scroll-snap-type: x mandatory;
+}
+
+.swipe-item {
+  min-width: 100%;
+  flex-shrink: 0;
+  scroll-snap-align: center;
+}
+
+@media (min-width: 768px) {
+  .swipe-item {
+    min-width: auto;
+    scroll-snap-align: unset;
+  }
+  
+  .canvas-swipe-wrapper {
+    scroll-snap-type: unset;
+  }
+}
+
+/* Offline status indicator */
+#offline-status {
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  background: rgba(231, 76, 60, 0.1);
+  color: #E74C3C;
 }
 

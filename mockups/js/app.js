@@ -1,7 +1,273 @@
 /**
- * go-threads Mockup JavaScript
- * Throwaway prototype code - will be replaced with HTMX + Alpine + Svelte
+ * go-threads Progressive Web App JavaScript
+ * Organized monolithic file with PWA integration and mobile support
  */
+
+// ============================================================================
+// PWA REGISTRATION & INSTALLATION
+// ============================================================================
+
+let deferredPrompt = null;
+let isOnline = navigator.onLine;
+
+// Register service worker and handle PWA installation
+async function initPWA() {
+  if ('serviceWorker' in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      console.log('[PWA] Service worker registered:', registration.scope);
+      
+      // Handle service worker updates
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            showToast('App updated! Refresh to use new version.', 'info');
+          }
+        });
+      });
+    } catch (error) {
+      console.error('[PWA] Service worker registration failed:', error);
+    }
+  }
+  
+  // Handle install prompt
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    showInstallButton();
+  });
+  
+  // Handle app install
+  window.addEventListener('appinstalled', () => {
+    console.log('[PWA] App installed successfully');
+    hideInstallButton();
+    showToast('App installed! Access from home screen.', 'success');
+  });
+  
+  // Handle online/offline status
+  window.addEventListener('online', () => {
+    isOnline = true;
+    updateOfflineStatus();
+    syncOfflineData();
+  });
+  
+  window.addEventListener('offline', () => {
+    isOnline = false;
+    updateOfflineStatus();
+  });
+  
+  updateOfflineStatus();
+}
+
+// Show/hide install button based on PWA availability
+function showInstallButton() {
+  const installBtn = document.getElementById('install-pwa-btn');
+  if (installBtn) {
+    installBtn.style.display = 'block';
+    installBtn.onclick = installPWA;
+  }
+}
+
+function hideInstallButton() {
+  const installBtn = document.getElementById('install-pwa-btn');
+  if (installBtn) {
+    installBtn.style.display = 'none';
+  }
+}
+
+// Install PWA when user clicks install button
+async function installPWA() {
+  if (!deferredPrompt) return;
+  
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  
+  if (outcome === 'accepted') {
+    console.log('[PWA] User accepted install');
+  } else {
+    console.log('[PWA] User dismissed install');
+  }
+  
+  deferredPrompt = null;
+}
+
+// Update offline status indicator
+function updateOfflineStatus() {
+  const offlineIndicator = document.getElementById('offline-status');
+  if (!offlineIndicator) return;
+  
+  if (isOnline) {
+    offlineIndicator.style.display = 'none';
+  } else {
+    offlineIndicator.style.display = 'block';
+    offlineIndicator.innerHTML = '<span style="color: #E74C3C;">📱 Offline Mode</span>';
+  }
+}
+
+// Sync offline data when connection returns
+async function syncOfflineData() {
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    try {
+      await navigator.serviceWorker.ready;
+      navigator.serviceWorker.controller.postMessage({ type: 'SYNC_DATA' });
+    } catch (error) {
+      console.error('[PWA] Failed to sync offline data:', error);
+    }
+  }
+}
+
+// ============================================================================
+// THEME SWITCHING
+// ============================================================================
+
+let currentTheme = localStorage.getItem('theme') || 'light';
+
+function initTheme() {
+  // Apply saved theme
+  document.documentElement.setAttribute('data-theme', currentTheme);
+  
+  // Setup theme toggle button
+  const themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) {
+    updateThemeButton();
+    themeToggle.onclick = toggleTheme;
+  }
+}
+
+function toggleTheme() {
+  currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', currentTheme);
+  localStorage.setItem('theme', currentTheme);
+  updateThemeButton();
+  showToast(`Switched to ${currentTheme} theme`, 'info');
+}
+
+function updateThemeButton() {
+  const themeToggle = document.getElementById('theme-toggle');
+  if (!themeToggle) return;
+  
+  themeToggle.innerHTML = currentTheme === 'light' ? '🌙' : '☀️';
+  themeToggle.title = `Switch to ${currentTheme === 'light' ? 'dark' : 'light'} mode`;
+}
+
+// ============================================================================
+// MOBILE TOUCH & SWIPE INTERACTIONS
+// ============================================================================
+
+function initMobileInteractions() {
+  // Initialize swipe interfaces for outfit canvas
+  initCanvasSwipe();
+  
+  // Initialize collapsible sections for mobile
+  initCollapsibleSections();
+  
+  // Handle mobile upload options
+  initMobileUpload();
+}
+
+// Canvas swipe functionality for mobile outfit building
+function initCanvasSwipe() {
+  const swipeContainer = document.getElementById('canvas-swipe-container');
+  if (!swipeContainer) return;
+  
+  // Ensure proper touch-action for horizontal scrolling
+  swipeContainer.style.touchAction = 'pan-x';
+  
+  // Add scroll snap for smooth swipe transitions
+  const swipeWrapper = document.querySelector('.canvas-swipe-wrapper');
+  if (swipeWrapper) {
+    swipeWrapper.style.scrollSnapType = 'x mandatory';
+    
+    // Add snap alignment to child elements
+    const swipeItems = swipeWrapper.querySelectorAll('.swipe-item');
+    swipeItems.forEach(item => {
+      item.style.scrollSnapAlign = 'center';
+    });
+  }
+}
+
+// Collapsible sections for analytics dashboard on mobile
+function initCollapsibleSections() {
+  const collapsibleHeaders = document.querySelectorAll('[data-collapsible]');
+  
+  collapsibleHeaders.forEach(header => {
+    header.onclick = () => {
+      const section = header.closest('.collapsible-section');
+      if (!section) return;
+      
+      const content = section.querySelector('.collapsible-content');
+      if (!content) return;
+      
+      const isCollapsed = section.classList.contains('collapsed');
+      
+      if (isCollapsed) {
+        section.classList.remove('collapsed');
+        content.style.display = 'block';
+        header.querySelector('.toggle-icon').textContent = '▼';
+      } else {
+        section.classList.add('collapsed');
+        content.style.display = 'none';
+        header.querySelector('.toggle-icon').textContent = '▶';
+      }
+    };
+    
+    // Initialize with expand icon
+    if (!header.querySelector('.toggle-icon')) {
+      const icon = document.createElement('span');
+      icon.className = 'toggle-icon';
+      icon.textContent = '▼';
+      icon.style.marginLeft = 'auto';
+      header.appendChild(icon);
+    }
+  });
+}
+
+// Mobile-specific upload handling
+function initMobileUpload() {
+  const mobileUploadBtn = document.getElementById('mobile-upload-btn');
+  if (!mobileUploadBtn) return;
+  
+  mobileUploadBtn.onclick = () => {
+    // Show mobile upload options (camera, gallery)
+    showMobileUploadOptions();
+  };
+}
+
+function showMobileUploadOptions() {
+  const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  
+  let options = [
+    { label: 'Choose from Gallery', onclick: 'document.getElementById("upload-input").click()' }
+  ];
+  
+  if (isMobile) {
+    options.unshift(
+      { label: 'Take Photo', onclick: 'openCamera()' }
+    );
+  }
+  
+  showModal('Upload Item', `
+    <p>Choose how to add your clothing item:</p>
+  `, options);
+}
+
+function openCamera() {
+  // Create a file input with camera capture
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment'; // Rear camera
+  
+  input.onchange = (e) => {
+    if (e.target.files.length > 0) {
+      enqueueFiles(e.target.files);
+    }
+    closeModal();
+  };
+  
+  input.click();
+}
 
 // ============================================================================
 // AI API CONFIGURATION
@@ -610,6 +876,12 @@ function enqueueFiles(files) {
       continue;
     }
 
+    // Check upload mode - if full-outfit mode, handle differently
+    if (currentUploadMode === 'full-outfit') {
+      handleOutfitSegmentation(file);
+      continue; // Skip regular upload processing for outfit segmentation
+    }
+
     const queueItem = {
       id: 'uq-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
       file,
@@ -806,7 +1078,7 @@ async function processQueueItem(queueItem) {
             }
         }
 
-        // AI analysis (Skip if scraped data is sufficient)
+        // AI analysis (Skip if scraped data or segment data is sufficient)
         let aiResult = null;
         let skipAI = false;
         
@@ -822,6 +1094,21 @@ async function processQueueItem(queueItem) {
                  brand: queueItem.scrapedData.brand,
                  tags: [], // Tags might be missing, but that's okay
                  raw_response: "Scraped via AI Text Analysis"
+             };
+        }
+        
+        // If we have segment data from outfit segmentation, use it
+        if (queueItem.segmentData) {
+             skipAI = true;
+             // Construct mock aiResult from segment data
+             aiResult = {
+                 name: queueItem.segmentData.description || queueItem.segmentData.category + ' item',
+                 description: queueItem.segmentData.description || '',
+                 category: queueItem.segmentData.category,
+                 color: '', // Color extraction would need separate AI call
+                 brand: '',
+                 tags: [queueItem.segmentData.category],
+                 raw_response: `Segmented from outfit (confidence: ${(queueItem.segmentData.confidence * 100).toFixed(0)}%)`
              };
         }
 
@@ -3523,10 +3810,10 @@ function editOutfit(outfitId) {
 // ANALYTICS
 // ============================================================================
 
-function initAnalytics() {
-  renderAnalytics();
-  renderMostWornItems();
-  renderLeastWornItems();
+async function initAnalytics() {
+  await renderAnalytics();
+  await renderMostWornItems();
+  await renderLeastWornItems();
   renderCategoryBreakdown();
 
   // Setup AI Analytics button
@@ -3553,17 +3840,36 @@ function initAnalytics() {
   }
 }
 
-function renderAnalytics() {
-  // Update stat cards
-  const totalItems = appData.items.length;
-  const totalInvestment = appData.items.reduce((sum, item) => sum + (item.price || 0), 0);
-  const totalWears = appData.items.reduce((sum, item) => sum + (item.wearCount || 0), 0);
-  const avgCostPerWear = totalWears > 0 ? (totalInvestment / totalWears) : 0;
+async function renderAnalytics() {
+  try {
+    // Fetch analytics data from API
+    const response = await fetch('http://localhost:8556/api/analytics/wardrobe-stats');
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    
+    const stats = await response.json();
+    
+    // Calculate average cost per wear
+    const totalWears = Object.values(stats.by_category || {}).reduce((sum, cat) => sum + (cat.total_wears || 0), 0);
+    const totalInvestment = Object.values(stats.by_category || {}).reduce((sum, cat) => sum + (cat.total_investment || 0), 0);
+    const avgCostPerWear = totalWears > 0 ? (totalInvestment / totalWears) : 0;
 
-  updateStatCard('stat-total-items', totalItems);
-  updateStatCard('stat-total-investment', `$${totalInvestment.toFixed(0)}`);
-  updateStatCard('stat-avg-cpw', `$${avgCostPerWear.toFixed(2)}`);
-  updateStatCard('stat-total-wears', totalWears);
+    // Update stat cards
+    updateStatCard('stat-total-items', stats.total_items || 0);
+    updateStatCard('stat-total-investment', `$${totalInvestment.toFixed(0)}`);
+    updateStatCard('stat-avg-cpw', `$${avgCostPerWear.toFixed(2)}`);
+    updateStatCard('stat-total-wears', totalWears);
+    
+  } catch (error) {
+    console.error('Failed to load analytics:', error);
+    // Fallback to static data or show error
+    updateStatCard('stat-total-items', '—');
+    updateStatCard('stat-total-investment', '—');
+    updateStatCard('stat-avg-cpw', '—');
+    updateStatCard('stat-total-wears', '—');
+    showToast('Failed to load analytics data', 'error');
+  }
 }
 
 function updateStatCard(id, value) {
@@ -3592,41 +3898,61 @@ function getLeastWornItems(limit = 5) {
     .slice(0, limit);
 }
 
-function renderMostWornItems() {
+async function renderMostWornItems() {
   const tbody = document.getElementById('most-worn-tbody');
   if (!tbody) return;
 
-  const items = getMostWornItems(5);
-  tbody.innerHTML = items.map(item => {
-    const cpw = calculateCostPerWear(item);
-    return `
-      <tr style="border-bottom: 1px solid var(--border);">
-        <td style="padding: 1rem; font-weight: 600;">${item.name}</td>
-        <td style="padding: 1rem; color: var(--text-neutral);">${item.category}</td>
-        <td style="padding: 1rem;">${item.wearCount || 0}</td>
-        <td style="padding: 1rem; color: var(--primary);">$${cpw.toFixed(2)}</td>
-      </tr>
-    `;
-  }).join('');
+  try {
+    const response = await fetch('http://localhost:8556/api/analytics/most-worn');
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    
+    const items = await response.json();
+    tbody.innerHTML = items.map(item => {
+      const cpw = item.price > 0 && item.wear_count > 0 ? (item.price / item.wear_count) : (item.price || 0);
+      return `
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 1rem; font-weight: 600;">${item.name}</td>
+          <td style="padding: 1rem; color: var(--text-neutral);">${item.category}</td>
+          <td style="padding: 1rem;">${item.wear_count || 0}</td>
+          <td style="padding: 1rem; color: var(--primary);">$${cpw.toFixed(2)}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (error) {
+    console.error('Failed to load most worn items:', error);
+    tbody.innerHTML = '<tr><td colspan="4" style="padding: 1rem; text-align: center; color: var(--text-neutral);">Failed to load data</td></tr>';
+  }
 }
 
-function renderLeastWornItems() {
+async function renderLeastWornItems() {
   const tbody = document.getElementById('least-worn-tbody');
   if (!tbody) return;
 
-  const items = getLeastWornItems(5);
-  tbody.innerHTML = items.map(item => {
-    const cpw = calculateCostPerWear(item);
-    const color = item.wearCount < 3 ? '#E74C3C' : 'var(--primary)';
-    return `
-      <tr style="border-bottom: 1px solid var(--border);">
-        <td style="padding: 1rem; font-weight: 600;">${item.name}</td>
-        <td style="padding: 1rem; color: var(--text-neutral);">${item.category}</td>
-        <td style="padding: 1rem;">${item.wearCount || 0}</td>
-        <td style="padding: 1rem; color: ${color};">$${cpw.toFixed(2)}</td>
-      </tr>
-    `;
-  }).join('');
+  try {
+    const response = await fetch('http://localhost:8556/api/analytics/least-worn');
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    
+    const items = await response.json();
+    tbody.innerHTML = items.map(item => {
+      const cpw = item.price > 0 && item.wear_count > 0 ? (item.price / item.wear_count) : (item.price || 0);
+      const color = item.wear_count < 3 ? '#E74C3C' : 'var(--primary)';
+      return `
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 1rem; font-weight: 600;">${item.name}</td>
+          <td style="padding: 1rem; color: var(--text-neutral);">${item.category}</td>
+          <td style="padding: 1rem;">${item.wear_count || 0}</td>
+          <td style="padding: 1rem; color: ${color};">$${cpw.toFixed(2)}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (error) {
+    console.error('Failed to load least worn items:', error);
+    tbody.innerHTML = '<tr><td colspan="4" style="padding: 1rem; text-align: center; color: var(--text-neutral);">Failed to load data</td></tr>';
+  }
 }
 
 function renderCategoryBreakdown() {
@@ -4723,6 +5049,15 @@ async function getStyleVariation(items, style) {
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', async function() {
+  // Initialize PWA functionality first
+  await initPWA();
+  
+  // Initialize theme system
+  initTheme();
+  
+  // Initialize mobile interactions
+  initMobileInteractions();
+
   // Migrate localStorage data to API (one-time)
   await migrateLocalStorageToAPI();
 
@@ -5713,5 +6048,370 @@ function enqueueScrapedItem(file, metadata) {
       processUploadQueue();
     };
     reader.readAsDataURL(file);
+}
+
+// ============================================================================
+// OUTFIT SEGMENTATION
+// ============================================================================
+
+// Global variable to track upload mode
+let currentUploadMode = 'individual';
+
+// Handle click on upload area to trigger file input
+function handleUploadAreaClick() {
+  const uploadInput = document.getElementById('upload-input');
+  if (uploadInput) {
+    uploadInput.click();
+  }
+}
+
+function updateUploadMode() {
+  const selectedMode = document.querySelector('input[name="upload-mode"]:checked')?.value || 'individual';
+  currentUploadMode = selectedMode;
+  
+  // Update UI text based on mode
+  const uploadText = document.getElementById('upload-text');
+  const uploadSubtext = document.getElementById('upload-subtext');
+  const uploadIcon = document.getElementById('upload-icon');
+  
+  if (selectedMode === 'full-outfit') {
+    uploadIcon.textContent = '👗';
+    uploadText.textContent = 'Upload full outfit photo for auto-segmentation';
+    uploadSubtext.textContent = 'AI will detect individual clothing items automatically';
+  } else {
+    uploadIcon.textContent = '☁️';
+    uploadText.textContent = 'Drag & drop images here or click to upload';
+    uploadSubtext.textContent = 'Supports JPG, PNG, WEBP';
+  }
+}
+
+// Handle outfit segmentation upload
+async function handleOutfitSegmentation(file) {
+  const queueId = 'outfit-seg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  
+  const queueItem = {
+    id: queueId,
+    file,
+    status: 'uploading',
+    statusText: 'Segmenting outfit...',
+    thumb: null,
+    error: null,
+    isOutfitSegmentation: true
+  };
+  
+  // Create thumbnail
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    queueItem.thumb = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  
+  uploadQueue.push(queueItem);
+  renderUploadQueuePanel();
+  
+  try {
+    // Upload to segmentation endpoint
+    const formData = new FormData();
+    formData.append('image', file);
+    
+    updateQueueItemStatus(queueId, 'analyzing', 'AI analyzing outfit...');
+    
+    const response = await fetch('http://localhost:8556/api/ai/segment-outfit', {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error('Segmentation failed');
+    }
+    
+    updateQueueItemStatus(queueId, 'completed', `Found ${result.segments.length} items`);
+    
+    // Show segmentation results in a modal
+    showSegmentationResults(file, result.segments);
+    
+  } catch (error) {
+    console.error('Outfit segmentation failed:', error);
+    updateQueueItemStatus(queueId, 'failed', 'Segmentation failed: ' + error.message);
+    showToast('Outfit segmentation failed: ' + error.message, 'error');
+  }
+}
+
+// Show segmentation results in a modal for user review
+function showSegmentationResults(originalFile, segments) {
+  // Create modal HTML
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h3>Outfit Segmentation Results</h3>
+        <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Found ${segments.length} clothing items. Review and select which ones to add to your wardrobe:</p>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1rem;">
+          <!-- Original image column -->
+          <div>
+            <h4>Original Photo</h4>
+            <div id="original-image-container" style="position: relative; border: 1px solid var(--border); border-radius: 0.5rem; overflow: hidden;">
+              <img id="original-image" src="" alt="Original outfit" style="width: 100%; height: auto; display: block;">
+              <canvas id="overlay-canvas" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+            </div>
+          </div>
+          
+          <!-- Detected items column -->
+          <div>
+            <h4>Detected Items</h4>
+            <div id="detected-items-list" style="max-height: 400px; overflow-y: auto;">
+              <!-- Items will be populated here -->
+            </div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 2rem; text-align: center;">
+          <button class="btn btn-primary" onclick="addSelectedSegments()">Add Selected Items to Wardrobe</button>
+          <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="margin-left: 1rem;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Load the original image
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = document.getElementById('original-image');
+    img.src = e.target.result;
+    
+    img.onload = () => {
+      // Draw bounding boxes on overlay canvas
+      drawSegmentationOverlay(img, segments);
+      // Populate items list
+      populateDetectedItemsList(segments, e.target.result);
+    };
+  };
+  reader.readAsDataURL(originalFile);
+  
+  // Store segments data for later use
+  modal.segmentsData = segments;
+  modal.originalImageData = null;
+  const dataReader = new FileReader();
+  dataReader.onload = (e) => {
+    modal.originalImageData = e.target.result;
+  };
+  dataReader.readAsDataURL(originalFile);
+}
+
+// Draw bounding boxes overlay on the original image
+function drawSegmentationOverlay(img, segments) {
+  const canvas = document.getElementById('overlay-canvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Set canvas size to match image
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  canvas.style.width = img.clientWidth + 'px';
+  canvas.style.height = img.clientHeight + 'px';
+  
+  // Draw bounding boxes
+  segments.forEach((segment, index) => {
+    const box = segment.bounding_box;
+    const x = (box.x / 100) * canvas.width;
+    const y = (box.y / 100) * canvas.height;
+    const width = (box.width / 100) * canvas.width;
+    const height = (box.height / 100) * canvas.height;
+    
+    // Generate color based on index
+    const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dda0dd', '#98d8c8'];
+    const color = colors[index % colors.length];
+    
+    // Draw bounding box
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(x, y, width, height);
+    
+    // Draw label background
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y - 25, Math.max(100, ctx.measureText(segment.category).width + 10), 25);
+    
+    // Draw label text
+    ctx.fillStyle = 'white';
+    ctx.font = '14px Arial';
+    ctx.fillText(segment.category, x + 5, y - 8);
+  });
+}
+
+// Populate the detected items list
+function populateDetectedItemsList(segments, originalImageSrc) {
+  const container = document.getElementById('detected-items-list');
+  
+  container.innerHTML = segments.map((segment, index) => {
+    const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dda0dd', '#98d8c8'];
+    const color = colors[index % colors.length];
+    
+    return `
+      <div class="detected-item" style="border: 2px solid ${color}; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; background: var(--bg-neutral);">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <input type="checkbox" id="segment-${index}" checked style="transform: scale(1.2);">
+          <div style="flex: 1;">
+            <h5 style="margin: 0; color: ${color}; text-transform: capitalize;">${segment.category}</h5>
+            <p style="margin: 0.25rem 0; font-size: 0.9em; color: var(--text-neutral);">${segment.description}</p>
+            <p style="margin: 0; font-size: 0.8em; color: var(--text-neutral);">Confidence: ${(segment.confidence * 100).toFixed(0)}%</p>
+          </div>
+          <button class="btn btn-small" onclick="previewSegment(${index})" style="background: ${color}; color: white; border: none;">Preview</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Preview a specific segment (crop and show in popup)
+async function previewSegment(segmentIndex) {
+  const modal = document.querySelector('.modal-overlay');
+  if (!modal) return;
+  
+  const segments = modal.segmentsData;
+  const segment = segments[segmentIndex];
+  const originalImageData = modal.originalImageData;
+  
+  if (!originalImageData) {
+    showToast('Original image data not available', 'error');
+    return;
+  }
+  
+  try {
+    // Create a cropped version of the image
+    const croppedImageData = await cropImageFromSegment(originalImageData, segment.bounding_box);
+    
+    // Show preview popup
+    const previewPopup = document.createElement('div');
+    previewPopup.className = 'modal-overlay';
+    previewPopup.style.zIndex = '10001';
+    previewPopup.innerHTML = `
+      <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-header">
+          <h3>${segment.category} Preview</h3>
+          <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">×</button>
+        </div>
+        <div class="modal-body" style="text-align: center;">
+          <img src="${croppedImageData}" alt="Cropped item" style="max-width: 100%; border-radius: 0.5rem; border: 1px solid var(--border);">
+          <p style="margin-top: 1rem; color: var(--text-neutral);">${segment.description}</p>
+          <p style="margin: 0.5rem 0; color: var(--text-neutral); font-size: 0.9em;">Confidence: ${(segment.confidence * 100).toFixed(0)}%</p>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(previewPopup);
+    
+  } catch (error) {
+    console.error('Preview failed:', error);
+    showToast('Preview failed: ' + error.message, 'error');
+  }
+}
+
+// Crop image based on bounding box
+async function cropImageFromSegment(imageData, boundingBox) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Calculate crop dimensions
+      const cropX = (boundingBox.x / 100) * img.width;
+      const cropY = (boundingBox.y / 100) * img.height;
+      const cropWidth = (boundingBox.width / 100) * img.width;
+      const cropHeight = (boundingBox.height / 100) * img.height;
+      
+      // Set canvas size to crop size
+      canvas.width = cropWidth;
+      canvas.height = cropHeight;
+      
+      // Draw cropped portion
+      ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+      
+      // Convert to data URL
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = imageData;
+  });
+}
+
+// Add selected segments to wardrobe
+async function addSelectedSegments() {
+  const modal = document.querySelector('.modal-overlay');
+  if (!modal) return;
+  
+  const segments = modal.segmentsData;
+  const originalImageData = modal.originalImageData;
+  
+  // Get selected segments
+  const selectedSegments = [];
+  segments.forEach((segment, index) => {
+    const checkbox = document.getElementById(`segment-${index}`);
+    if (checkbox && checkbox.checked) {
+      selectedSegments.push({ segment, index });
+    }
+  });
+  
+  if (selectedSegments.length === 0) {
+    showToast('Please select at least one item to add', 'warning');
+    return;
+  }
+  
+  modal.remove();
+  showToast(`Adding ${selectedSegments.length} items to wardrobe...`, 'info');
+  
+  // Process each selected segment
+  for (const { segment, index } of selectedSegments) {
+    try {
+      // Crop the image
+      const croppedImageData = await cropImageFromSegment(originalImageData, segment.bounding_box);
+      
+      // Convert to blob
+      const response = await fetch(croppedImageData);
+      const blob = await response.blob();
+      
+      // Create file
+      const file = new File([blob], `${segment.category}_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      
+      // Add to upload queue with pre-filled data
+      const queueId = 'seg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      const queueItem = {
+        id: queueId,
+        file,
+        status: 'queued',
+        statusText: 'Queued from segmentation',
+        thumb: croppedImageData,
+        error: null,
+        segmentData: {
+          category: segment.category,
+          description: segment.description,
+          confidence: segment.confidence
+        }
+      };
+      
+      uploadQueue.push(queueItem);
+      
+    } catch (error) {
+      console.error('Failed to process segment:', error);
+      showToast(`Failed to process ${segment.category}: ${error.message}`, 'error');
+    }
+  }
+  
+  renderUploadQueuePanel();
+  processUploadQueue();
+  showToast(`Successfully queued ${selectedSegments.length} items!`, 'success');
 }
 
